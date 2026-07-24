@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Humanos",
+    "slug": "humanos",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "android": {
+      "package": "com.humanos.app"
+    },
+    "ios": {
+      "bundleIdentifier": "com.humanos.app"
+    }
+  }
+}
