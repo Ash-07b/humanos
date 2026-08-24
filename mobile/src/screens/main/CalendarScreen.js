@@ -57,83 +57,15 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
   const [eventReminder, setEventReminder] = useState(true);
   const [eventLocation, setEventLocation] = useState('');
 
-  // Initial Events Database (Supports today & future months/years)
-  const currentYear = today.getFullYear();
-  const currentMonthNum = today.getMonth() + 1;
-  const pad = (n) => String(n).padStart(2, '0');
+  // Events State (dynamically bound to database user)
+  const [events, setEvents] = useState(user?.events || []);
 
-  const [events, setEvents] = useState([
-    {
-      id: '1',
-      dateString: `${currentYear}-${pad(currentMonthNum)}-20`,
-      title: 'Deep Work Block: Architecture & Sprints',
-      time: '09:00 AM - 11:00 AM',
-      tag: 'Deep Work',
-      color: '#4F46E5',
-      reminder: true,
-      location: 'Command Center Room',
-    },
-    {
-      id: '2',
-      dateString: `${currentYear}-${pad(currentMonthNum)}-20`,
-      title: 'Executive OKR & Strategy Review',
-      time: '02:00 PM - 03:00 PM',
-      tag: 'Strategy',
-      color: '#6366F1',
-      reminder: true,
-      location: 'Virtual Boardroom',
-    },
-    {
-      id: '3',
-      dateString: `${currentYear}-${pad(currentMonthNum)}-20`,
-      title: 'Aerobic Recovery & Vitality Session',
-      time: '05:30 PM - 06:30 PM',
-      tag: 'Health',
-      color: '#059669',
-      reminder: false,
-      location: 'Fitness Club',
-    },
-    {
-      id: '4',
-      dateString: `${currentYear}-${pad(currentMonthNum)}-25`,
-      title: 'HumanOS Core Beta Build Release',
-      time: '11:00 AM - 12:30 PM',
-      tag: 'Milestone',
-      color: '#4F46E5',
-      reminder: true,
-      location: 'Deployment Pipeline',
-    },
-    {
-      id: '5',
-      dateString: `${currentYear}-${pad(currentMonthNum + 1 > 12 ? 1 : currentMonthNum + 1)}-05`,
-      title: 'Quarterly Strategic Growth Summit',
-      time: '09:00 AM - 04:00 PM',
-      tag: 'Strategy',
-      color: '#818CF8',
-      reminder: true,
-      location: 'Offsite Convention',
-    },
-    {
-      id: '6',
-      dateString: `${currentYear}-${pad(currentMonthNum + 1 > 12 ? 1 : currentMonthNum + 1)}-18`,
-      title: 'Annual Portfolio & Financial Audit',
-      time: '03:00 PM - 05:00 PM',
-      tag: 'Finance',
-      color: '#D97706',
-      reminder: true,
-      location: 'Private Banking Hub',
-    },
-    {
-      id: '7',
-      dateString: `${currentYear + 1}-01-15`,
-      title: 'New Year Operational Vision Sprint',
-      time: '10:00 AM - 01:00 PM',
-      tag: 'Milestone',
-      color: '#4F46E5',
-      reminder: true,
-      location: 'Executive HQ',
-    },
-  ]);
+  // Sync state whenever user data changes from database
+  React.useEffect(() => {
+    if (user && user.events) {
+      setEvents(user.events || []);
+    }
+  }, [user]);
 
   const showNotice = (msg) => {
     setNoticeMessage(msg);

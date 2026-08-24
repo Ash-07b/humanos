@@ -30,33 +30,25 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
   const displayName =
     user?.fullName ||
     user?.name ||
-    (user?.email ? user.email.split('@')[0] : 'Ashbel');
+    (user?.email ? user.email.split('@')[0] : 'User');
   const userAvatar = user?.profilePic || '⚡';
-  const userEmail = user?.email || 'assistant@humanos.app';
+  const userEmail = user?.email || '';
 
-  // Default interactive tasks (safe even if database is empty/unconnected)
-  const [tasks, setTasks] = useState(
-    user?.tasks?.length
-      ? user.tasks
-      : user?.intentions?.length
-      ? user.intentions
-      : [
-          { id: '1', title: 'Review quarterly priorities & OKRs', category: 'Strategy', done: false, time: '30 min' },
-          { id: '2', title: 'Deep focus: Execute priority sprint deliverables', category: 'Deep Work', done: false, time: '90 min' },
-          { id: '3', title: 'Review financial allocations & budget', category: 'Finance', done: true, time: 'Daily' },
-        ]
-  );
+  // Tasks & habits state (dynamically bound to database user)
+  const [tasks, setTasks] = useState(user?.tasks || user?.intentions || []);
+  const [habits, setHabits] = useState(user?.habits || []);
 
-  // Default interactive habits (safe even if database is empty/unconnected)
-  const [habits, setHabits] = useState(
-    user?.habits?.length
-      ? user.habits
-      : [
-          { id: 'h1', name: 'Strategic Planning', streak: 6, icon: '🎯', completedToday: true },
-          { id: 'h2', name: 'Deep Work Block', streak: 4, icon: '⚡', completedToday: false },
-          { id: 'h3', name: 'Evening System Review', streak: 12, icon: '📈', completedToday: false },
-        ]
-  );
+  // Sync state whenever user data changes from database
+  React.useEffect(() => {
+    if (user) {
+      if (user.tasks || user.intentions) {
+        setTasks(user.tasks || user.intentions || []);
+      }
+      if (user.habits) {
+        setHabits(user.habits || []);
+      }
+    }
+  }, [user]);
 
   const moodOptions = [
     { label: '⚡ High Focus', emoji: '⚡' },
@@ -389,38 +381,48 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
               </View>
             </View>
 
-            <View style={styles.habitsGrid}>
-              {habits.map((habit) => (
-                <Pressable
-                  key={habit.id}
-                  onPress={() => toggleHabit(habit.id)}
-                  style={({ pressed }) => [
-                    styles.habitCard,
-                    habit.completedToday && styles.habitCardCompleted,
-                    isWeb && styles.webPointer,
-                    pressed && styles.pressedOpacity,
-                  ]}
-                >
-                  <View style={styles.habitCardTop}>
-                    <Text style={styles.habitIcon}>{habit.icon}</Text>
-                    <View
-                      style={[
-                        styles.habitCheckCircle,
-                        habit.completedToday && styles.habitCheckCircleActive,
-                      ]}
-                    >
-                      {habit.completedToday ? (
-                        <Text style={styles.habitCheckMark}>✓</Text>
-                      ) : (
-                        <Text style={styles.habitPlus}>+</Text>
-                      )}
+            {habits.length === 0 ? (
+              <View style={styles.emptyStateBox}>
+                <Text style={styles.emptyStateEmoji}>⚡</Text>
+                <Text style={styles.emptyStateTitle}>No habits tracked yet</Text>
+                <Text style={styles.emptyStateDesc}>
+                  Habits logged in your Goals & Habits tab will automatically appear here.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.habitsGrid}>
+                {habits.map((habit) => (
+                  <Pressable
+                    key={habit.id}
+                    onPress={() => toggleHabit(habit.id)}
+                    style={({ pressed }) => [
+                      styles.habitCard,
+                      habit.completedToday && styles.habitCardCompleted,
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <View style={styles.habitCardTop}>
+                      <Text style={styles.habitIcon}>{habit.icon || '⚡'}</Text>
+                      <View
+                        style={[
+                          styles.habitCheckCircle,
+                          habit.completedToday && styles.habitCheckCircleActive,
+                        ]}
+                      >
+                        {habit.completedToday ? (
+                          <Text style={styles.habitCheckMark}>✓</Text>
+                        ) : (
+                          <Text style={styles.habitPlus}>+</Text>
+                        )}
+                      </View>
                     </View>
-                  </View>
-                  <Text style={styles.habitName}>{habit.name}</Text>
-                  <Text style={styles.habitStreak}>🔥 {habit.streak}d streak</Text>
-                </Pressable>
-              ))}
-            </View>
+                    <Text style={styles.habitName}>{habit.name}</Text>
+                    <Text style={styles.habitStreak}>🔥 {habit.streak || 0}d streak</Text>
+                  </Pressable>
+                ))}
+              </View>
+            )}
           </View>
 
           {/* Connected Management Modules */}

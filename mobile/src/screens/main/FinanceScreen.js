@@ -50,14 +50,15 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
   const [itemType, setItemType] = useState('Expense'); // 'Expense' | 'Income'
   const [itemCategory, setItemCategory] = useState('Operations');
 
-  // Transactions State
-  const [transactions, setTransactions] = useState([
-    { id: '1', title: 'Cloud Infrastructure & AI API', category: 'Software', amount: -150000, type: 'Expense', date: 'Today, 2:15 PM' },
-    { id: '2', title: 'Consulting Retainer Payment', category: 'Revenue', amount: 2850000, type: 'Income', date: 'Yesterday' },
-    { id: '3', title: 'Hardware & Workstation Lease', category: 'Office', amount: -125000, type: 'Expense', date: 'Aug 18' },
-    { id: '4', title: 'Quarterly Strategic Dividend', category: 'Investments', amount: 520000, type: 'Income', date: 'Aug 15' },
-    { id: '5', title: 'Executive Coaching & Books', category: 'Growth', amount: -85000, type: 'Expense', date: 'Aug 14' },
-  ]);
+  // Transactions State (dynamically bound to database user)
+  const [transactions, setTransactions] = useState(user?.transactions || []);
+
+  // Sync state whenever user data changes from database
+  React.useEffect(() => {
+    if (user && user.transactions) {
+      setTransactions(user.transactions || []);
+    }
+  }, [user]);
 
   const showNotice = (msg) => {
     setNoticeMessage(msg);
@@ -236,22 +237,32 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
               <Text style={styles.sectionCount}>{filteredTransactions.length} logs</Text>
             </View>
 
-            <View style={styles.txList}>
-              {filteredTransactions.map((tx) => (
-                <View key={tx.id} style={styles.txItem}>
-                  <View style={[styles.txIconWrap, tx.amount > 0 ? styles.txIconIncome : styles.txIconExpense]}>
-                    <Text style={styles.txIcon}>{tx.amount > 0 ? '↗' : '↘'}</Text>
+            {filteredTransactions.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 28, gap: 6 }}>
+                <Text style={{ fontSize: 28 }}>💰</Text>
+                <Text style={{ color: '#0F172A', fontSize: 14, fontWeight: '700' }}>No transactions recorded</Text>
+                <Text style={{ color: '#64748B', fontSize: 12, textAlign: 'center' }}>
+                  Tap "+ Record Transaction" above to track your income and expenditures.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.txList}>
+                {filteredTransactions.map((tx) => (
+                  <View key={tx.id} style={styles.txItem}>
+                    <View style={[styles.txIconWrap, tx.amount > 0 ? styles.txIconIncome : styles.txIconExpense]}>
+                      <Text style={styles.txIcon}>{tx.amount > 0 ? '↗' : '↘'}</Text>
+                    </View>
+                    <View style={styles.txMain}>
+                      <Text style={styles.txTitle}>{tx.title}</Text>
+                      <Text style={styles.txMeta}>{tx.category} • {tx.date}</Text>
+                    </View>
+                    <Text style={[styles.txAmount, tx.amount > 0 ? styles.amountPositive : styles.amountNegative]}>
+                      {tx.amount > 0 ? `+${sym}${tx.amount.toFixed(2)}` : `-${sym}${Math.abs(tx.amount).toFixed(2)}`}
+                    </Text>
                   </View>
-                  <View style={styles.txMain}>
-                    <Text style={styles.txTitle}>{tx.title}</Text>
-                    <Text style={styles.txMeta}>{tx.category} • {tx.date}</Text>
-                  </View>
-                  <Text style={[styles.txAmount, tx.amount > 0 ? styles.amountPositive : styles.amountNegative]}>
-                    {tx.amount > 0 ? `+${sym}${tx.amount.toFixed(2)}` : `-${sym}${Math.abs(tx.amount).toFixed(2)}`}
-                  </Text>
-                </View>
-              ))}
-            </View>
+                ))}
+              </View>
+            )}
           </View>
 
           <View style={{ height: 24 }} />

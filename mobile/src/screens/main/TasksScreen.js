@@ -55,93 +55,15 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   const [taskReminder, setTaskReminder] = useState(true);
   const [titleError, setTitleError] = useState('');
 
-  // Mock initial tasks
-  const [tasks, setTasks] = useState([
-    {
-      id: '1',
-      title: 'Complete project documentation',
-      description: 'Finalize API specifications and system architecture diagrams.',
-      dueDate: 'Today',
-      dueTime: '10:00 AM',
-      priority: 'High',
-      category: 'Work',
-      done: false,
-      reminder: true,
-      completedAt: null,
-    },
-    {
-      id: '2',
-      title: 'Review health records',
-      description: 'Inspect sleep quality metrics, biometric stats, and wellness logs.',
-      dueDate: 'Today',
-      dueTime: '12:30 PM',
-      priority: 'Medium',
-      category: 'Health',
-      done: true,
-      reminder: false,
-      completedAt: '11:45 AM',
-    },
-    {
-      id: '3',
-      title: 'Work on HumanOS dashboard',
-      description: 'Refine executive command center layout and floating bottom bar.',
-      dueDate: 'Today',
-      dueTime: '3:00 PM',
-      priority: 'High',
-      category: 'Work',
-      done: false,
-      reminder: true,
-      completedAt: null,
-    },
-    {
-      id: '4',
-      title: 'Read 20 pages',
-      description: 'Focus block on deep work, flow state, and cognitive architecture.',
-      dueDate: 'Today',
-      dueTime: '7:00 PM',
-      priority: 'Low',
-      category: 'Personal',
-      done: false,
-      reminder: false,
-      completedAt: null,
-    },
-    {
-      id: '5',
-      title: 'Prepare presentation',
-      description: 'Build high-impact slide deck for upcoming quarterly sprint review.',
-      dueDate: 'Tomorrow',
-      dueTime: '9:00 AM',
-      priority: 'High',
-      category: 'Work',
-      done: false,
-      reminder: true,
-      completedAt: null,
-    },
-    {
-      id: '6',
-      title: 'Review monthly finances',
-      description: 'Audit recurring subscriptions and quarterly investment allocations.',
-      dueDate: 'Friday',
-      dueTime: '4:00 PM',
-      priority: 'Medium',
-      category: 'Finance',
-      done: false,
-      reminder: true,
-      completedAt: null,
-    },
-    {
-      id: '7',
-      title: 'Read project requirements',
-      description: 'Verify acceptance criteria with team deliverables.',
-      dueDate: 'Today',
-      dueTime: '8:30 AM',
-      priority: 'Medium',
-      category: 'Work',
-      done: true,
-      reminder: false,
-      completedAt: '8:45 AM',
-    },
-  ]);
+  // Tasks state (dynamically bound to database user)
+  const [tasks, setTasks] = useState(user?.tasks || []);
+
+  // Sync state whenever user data changes from database
+  React.useEffect(() => {
+    if (user && user.tasks) {
+      setTasks(user.tasks || []);
+    }
+  }, [user]);
 
   const showNotice = (msg) => {
     setNoticeMessage(msg);

@@ -39,13 +39,13 @@ export default function App() {
 
   const handleLoginSuccess = (credentials) => {
     console.log('User logged in with:', credentials);
-    setCurrentUser(credentials || { email: 'ashbel@example.com', fullName: 'Ashbel Anih' });
+    setCurrentUser(credentials || null);
     setCurrentScreen('dashboard');
   };
 
   const handleRegisterSuccess = (userInfo) => {
     console.log('User registered with:', userInfo);
-    setCurrentUser(userInfo || { fullName: 'Ashbel Anih', email: 'ashbel@example.com' });
+    setCurrentUser(userInfo || null);
     setCurrentScreen('dashboard');
   };
 

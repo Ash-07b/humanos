@@ -48,126 +48,26 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
   const [newGoalPriority, setNewGoalPriority] = useState('Medium');
   const [formError, setFormError] = useState('');
 
-  // Initial Goals Data
-  const [goals, setGoals] = useState([
-    {
-      id: 'g1',
-      title: 'Complete HumanOS Project',
-      description: 'Build and ship the full HumanOS mobile cross-platform operating system for self-mastery.',
-      category: 'Career',
-      progress: 72,
-      targetDate: 'September 30',
-      priority: 'High',
-      status: 'Active',
-      createdDate: 'July 15, 2026',
-      progressHistory: [
-        { date: 'Aug 18', progress: 72, note: 'Implemented Finance and Health modules' },
-        { date: 'Aug 10', progress: 55, note: 'Completed Dashboard and Tasks system' },
-        { date: 'Jul 25', progress: 30, note: 'Finalized architectural wireframes' },
-      ],
-      milestones: [
-        { id: 'm1', text: 'Requirements & Design Docs', completed: true },
-        { id: 'm2', text: 'UML Modeling & Architecture', completed: true },
-        { id: 'm3', text: 'Mobile Development Core', completed: true },
-        { id: 'm4', text: 'Testing & Hardening', completed: false },
-        { id: 'm5', text: 'Staging & Deployment', completed: false },
-      ],
-    },
-    {
-      id: 'g2',
-      title: 'Read 12 Books',
-      description: 'Read transformative books on systems thinking, personal leadership, and psychology.',
-      category: 'Learning',
-      progress: 50,
-      targetDate: 'December 31',
-      priority: 'Medium',
-      status: 'Active',
-      createdDate: 'January 1, 2026',
-      progressHistory: [
-        { date: 'Aug 15', progress: 50, note: 'Finished 6th book: Thinking in Systems' },
-        { date: 'Jun 20', progress: 33, note: 'Finished 4th book' },
-      ],
-      milestones: [
-        { id: 'm21', text: 'Read Books 1 to 4', completed: true },
-        { id: 'm22', text: 'Read Books 5 to 8', completed: true },
-        { id: 'm23', text: 'Read Books 9 to 12', completed: false },
-      ],
-    },
-    {
-      id: 'g3',
-      title: 'Save 500,000 FCFA',
-      description: 'Build a dedicated liquid contingency and investment fund in Central African Francs.',
-      category: 'Finance',
-      progress: 35,
-      targetDate: 'December 31',
-      priority: 'High',
-      status: 'Active',
-      createdDate: 'May 1, 2026',
-      progressHistory: [
-        { date: 'Aug 05', progress: 35, note: 'Deposited 75,000 FCFA monthly allocation' },
-        { date: 'Jul 01', progress: 20, note: 'Initial savings tranche deposited' },
-      ],
-      milestones: [
-        { id: 'm31', text: 'Accumulate first 150,000 FCFA', completed: true },
-        { id: 'm32', text: 'Reach 300,000 FCFA midpoint', completed: false },
-        { id: 'm33', text: 'Hit full 500,000 FCFA objective', completed: false },
-      ],
-    },
-    {
-      id: 'g4',
-      title: 'Exercise Regularly',
-      description: 'Maintain high cardio vitality and muscular strength through structured weekly sessions.',
-      category: 'Health',
-      progress: 65,
-      targetDate: 'October 15',
-      priority: 'Medium',
-      status: 'Active',
-      createdDate: 'June 10, 2026',
-      progressHistory: [
-        { date: 'Aug 19', progress: 65, note: 'Completed 4 straight weeks of 3x workouts' },
-        { date: 'Jul 15', progress: 40, note: 'Building steady habit momentum' },
-      ],
-      milestones: [
-        { id: 'm41', text: 'Establish 3x weekly workout routine', completed: true },
-        { id: 'm42', text: 'Run continuous 5km distance', completed: true },
-        { id: 'm43', text: 'Achieve 10 consecutive weeks consistency', completed: false },
-      ],
-    },
-  ]);
+  // Goals Data (dynamically bound to database user)
+  const [goals, setGoals] = useState(user?.goals || []);
+  const [completedGoals, setCompletedGoals] = useState(user?.completedGoals || []);
+  const supportingHabits = user?.habits || [];
 
-  const [completedGoals, setCompletedGoals] = useState([
-    {
-      id: 'cg1',
-      title: 'Finish Online System Architecture Course',
-      category: 'Learning',
-      completedDate: 'August 12',
-      progress: 100,
-    },
-    {
-      id: 'cg2',
-      title: 'Complete First Half-Year Reading Goal',
-      category: 'Learning',
-      completedDate: 'August 5',
-      progress: 100,
-    },
-    {
-      id: 'cg3',
-      title: 'Set Up Cameroon Bank Account',
-      category: 'Finance',
-      completedDate: 'July 28',
-      progress: 100,
-    },
-  ]);
+  // Sync state whenever user data changes from database
+  React.useEffect(() => {
+    if (user) {
+      if (user.goals) {
+        setGoals(user.goals || []);
+      }
+      if (user.completedGoals) {
+        setCompletedGoals(user.completedGoals || []);
+      }
+    }
+  }, [user]);
 
   const categories = ['All', 'Personal', 'Health', 'Career', 'Learning', 'Finance'];
   const formCategories = ['Personal', 'Health', 'Career', 'Learning', 'Finance', 'Other'];
   const priorities = ['Low', 'Medium', 'High'];
-
-  const supportingHabits = [
-    { id: 'h1', name: 'Read 20 minutes', frequency: 'Daily', icon: '📖', color: '#6366F1' },
-    { id: 'h2', name: 'Zone-2 Exercise', frequency: '3 times / week', icon: '⚡', color: '#0D9488' },
-    { id: 'h3', name: 'Work on project', frequency: '5 times / week', icon: '💻', color: '#4F46E5' },
-  ];
 
   const showToast = (msg) => {
     setToastMessage(msg);

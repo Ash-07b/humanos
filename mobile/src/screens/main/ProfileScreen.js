@@ -25,31 +25,79 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
   // Active Tab state
   const [activeTab, setActiveTab] = useState('profile');
 
-  // User Profile state (with fallback values requested)
-  const [fullName, setFullName] = useState(user?.fullName || 'Ashbel Anih');
-  const [email, setEmail] = useState(user?.email || 'ashbel@example.com');
-  const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || '+1 (555) 234-5678');
-  const [gender, setGender] = useState(user?.gender || 'Male');
-  const [dob, setDob] = useState(user?.dob || '14 May 1998');
-  const [avatar, setAvatar] = useState(user?.profilePic || '🌱');
+  // User Profile state (dynamically bound to database/auth user)
+  const [fullName, setFullName] = useState(user?.fullName || user?.name || '');
+  const [email, setEmail] = useState(user?.email || '');
+  const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || user?.phone || '');
+  const [gender, setGender] = useState(user?.gender || '');
+  const [dob, setDob] = useState(user?.dob || user?.dateOfBirth || '');
+  const [avatar, setAvatar] = useState(user?.profilePic || user?.avatar || '🌱');
+  const [memberStatus, setMemberStatus] = useState(user?.memberStatus || user?.tier || 'Active');
+  const [securityScore, setSecurityScore] = useState(user?.securityScore ?? 98);
+  const [activeStreak, setActiveStreak] = useState(user?.activeStreak ?? 0);
+  const [isPro, setIsPro] = useState(user?.isPro ?? true);
+
+  // Sync state whenever user prop updates from database / auth
+  React.useEffect(() => {
+    if (user) {
+      if (user.fullName !== undefined || user.name !== undefined) setFullName(user.fullName || user.name || '');
+      if (user.email !== undefined) setEmail(user.email || '');
+      if (user.phoneNumber !== undefined || user.phone !== undefined) setPhoneNumber(user.phoneNumber || user.phone || '');
+      if (user.gender !== undefined) setGender(user.gender || '');
+      if (user.dob !== undefined || user.dateOfBirth !== undefined) setDob(user.dob || user.dateOfBirth || '');
+      if (user.profilePic !== undefined || user.avatar !== undefined) setAvatar(user.profilePic || user.avatar || '🌱');
+      if (user.memberStatus !== undefined || user.tier !== undefined) setMemberStatus(user.memberStatus || user.tier || 'Active');
+      if (user.securityScore !== undefined) setSecurityScore(user.securityScore);
+      if (user.activeStreak !== undefined) setActiveStreak(user.activeStreak);
+      if (user.isPro !== undefined) setIsPro(user.isPro);
+      if (user.preferences) {
+        if (user.preferences.biometricsEnabled !== undefined) setBiometricsEnabled(user.preferences.biometricsEnabled);
+        if (user.preferences.twoFactorEnabled !== undefined) setTwoFactorEnabled(user.preferences.twoFactorEnabled);
+        if (user.preferences.pushNotifications !== undefined) setPushNotifications(user.preferences.pushNotifications);
+        if (user.preferences.aiPersonalization !== undefined) setAiPersonalization(user.preferences.aiPersonalization);
+        if (user.preferences.darkMode !== undefined) setDarkMode(user.preferences.darkMode);
+        if (user.preferences.language) setLanguage(user.preferences.language);
+        if (user.preferences.startOfWeek) setStartOfWeek(user.preferences.startOfWeek);
+        if (user.preferences.reminderTime) setReminderTime(user.preferences.reminderTime);
+      }
+    }
+  }, [user]);
 
   // Switches / Preferences state
-  const [biometricsEnabled, setBiometricsEnabled] = useState(true);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [aiPersonalization, setAiPersonalization] = useState(true);
-  const [darkMode, setDarkMode] = useState(true);
+  const [biometricsEnabled, setBiometricsEnabled] = useState(user?.preferences?.biometricsEnabled ?? true);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(user?.preferences?.twoFactorEnabled ?? false);
+  const [pushNotifications, setPushNotifications] = useState(user?.preferences?.pushNotifications ?? true);
+  const [aiPersonalization, setAiPersonalization] = useState(user?.preferences?.aiPersonalization ?? true);
+  const [darkMode, setDarkMode] = useState(user?.preferences?.darkMode ?? true);
 
   // Preference Dropdowns / Values
-  const [language, setLanguage] = useState('English (US)');
-  const [startOfWeek, setStartOfWeek] = useState('Monday');
-  const [reminderTime, setReminderTime] = useState('09:00 AM');
+  const [language, setLanguage] = useState(user?.preferences?.language || 'English (US)');
+  const [startOfWeek, setStartOfWeek] = useState(user?.preferences?.startOfWeek || 'Monday');
+  const [reminderTime, setReminderTime] = useState(user?.preferences?.reminderTime || '09:00 AM');
 
   // Modals for Editing & Features
   const [editProfileModalVisible, setEditProfileModalVisible] = useState(false);
   const [photoPickerVisible, setPhotoPickerVisible] = useState(false);
   const [securityModalVisible, setSecurityModalVisible] = useState(false);
   const [settingsModalVisible, setSettingsModalVisible] = useState(false);
+
+  // Support & Legal Modals
+  const [helpCenterModalVisible, setHelpCenterModalVisible] = useState(false);
+  const [contactSupportModalVisible, setContactSupportModalVisible] = useState(false);
+  const [aboutModalVisible, setAboutModalVisible] = useState(false);
+  const [termsModalVisible, setTermsModalVisible] = useState(false);
+  const [privacyModalVisible, setPrivacyModalVisible] = useState(false);
+
+  // Help Center FAQ State
+  const [faqSearchQuery, setFaqSearchQuery] = useState('');
+  const [selectedFaqCategory, setSelectedFaqCategory] = useState('All');
+  const [expandedFaqIndex, setExpandedFaqIndex] = useState(null);
+
+  // Contact Support State
+  const [supportCategory, setSupportCategory] = useState('General Inquiry');
+  const [supportSubject, setSupportSubject] = useState('');
+  const [supportMessage, setSupportMessage] = useState('');
+
   const [feedbackMessage, setFeedbackMessage] = useState('');
 
   // Password fields for security modal
@@ -65,8 +113,42 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
   const [tempDob, setTempDob] = useState(dob);
 
   const avatarOptions = ['🌱', '⚡', '🧠', '🌿', '🎯', '🦉', '🦊', '✨', '👑'];
-
   const languages = ['English (US)', 'Français (French)', 'English (UK)'];
+  const supportCategories = ['General Inquiry', 'Technical Issue', 'Bug Report', 'Feature Request', 'Billing'];
+  const faqCategories = ['All', 'Account', 'Tasks & Habits', 'Health', 'Privacy'];
+
+  const faqData = [
+    {
+      category: 'Account',
+      question: 'How do I change my account credentials or email?',
+      answer: 'You can update your personal information directly by tapping "Edit Profile" on this page. To change your master password or enable 2-Factor Authentication, open the Security Center.',
+    },
+    {
+      category: 'Account',
+      question: 'How do I enable Biometric Login or 2FA?',
+      answer: 'Navigate to Security Center via the shield icon or row in Account Settings, then toggle Biometric Authentication or Two-Factor Authentication.',
+    },
+    {
+      category: 'Health',
+      question: 'How does HumanOS calculate my daily readiness score?',
+      answer: 'HumanOS aggregates resting heart rate, sleep quality, recovery metrics, daily active minutes, and task consistency into a dynamic composite readiness index (0–100%).',
+    },
+    {
+      category: 'Tasks & Habits',
+      question: 'How do habit streaks and routines work?',
+      answer: 'Completing scheduled daily habits before midnight keeps your streak active. Habits link into your overarching quarterly goals for automatic telemetry tracking.',
+    },
+    {
+      category: 'Privacy',
+      question: 'Is my personal health data private and encrypted?',
+      answer: 'Yes. All biometric readings and journal entries are encrypted using industry-standard AES-256 at rest and TLS 1.3 in transit. HumanOS never sells your telemetry data to advertisers.',
+    },
+    {
+      category: 'Health',
+      question: 'Can I export my telemetry and health logs?',
+      answer: 'Yes, you can generate comprehensive PDF or CSV summaries from the Health Profile tab under Export Options.',
+    },
+  ];
 
   const cycleLanguage = () => {
     const currentIndex = languages.indexOf(language);
@@ -108,11 +190,33 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
     }, 2800);
   };
 
+  const handleSendSupportMessage = () => {
+    if (!supportSubject.trim() || !supportMessage.trim()) {
+      showNotice('Please complete the subject and message');
+      return;
+    }
+    const ticketId = Math.floor(1000 + Math.random() * 9000);
+    setSupportSubject('');
+    setSupportMessage('');
+    setContactSupportModalVisible(false);
+    showNotice(`Support ticket #HOS-${ticketId} created! We'll reply shortly.`);
+  };
+
   const handleRowPress = (title) => {
     if (title === 'Security Center' || title === 'Privacy & Security' || title === 'Change Password') {
       setSecurityModalVisible(true);
     } else if (title === 'System Settings' || title === 'Notification Settings' || title === 'Preferences') {
       setSettingsModalVisible(true);
+    } else if (title === 'Help Center') {
+      setHelpCenterModalVisible(true);
+    } else if (title === 'Contact Support') {
+      setContactSupportModalVisible(true);
+    } else if (title === 'About HumanOS') {
+      setAboutModalVisible(true);
+    } else if (title === 'Terms & Conditions') {
+      setTermsModalVisible(true);
+    } else if (title === 'Privacy Policy') {
+      setPrivacyModalVisible(true);
     } else if (title === 'Health Profile' || title === 'Health') {
       handleTabChange('health');
     } else if (title === 'Goals') {
@@ -120,6 +224,10 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
     } else if (title === 'Habits') {
       showNotice('Opening Supporting Habits');
       handleTabChange('goals');
+    } else if (title === 'Connected Accounts') {
+      showNotice('Connected Accounts: Google & Apple sync active');
+    } else if (title === 'Active Sessions') {
+      showNotice('Active Sessions: 2 authorized devices');
     } else {
       showNotice(`${title} opened`);
     }
@@ -258,20 +366,26 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
 
             <View style={styles.profileInfoColumn}>
               <View style={styles.nameRow}>
-                <Text style={styles.userName}>{fullName}</Text>
-                <View style={styles.verifiedBadge}>
-                  <Text style={styles.verifiedText}>✓ PRO</Text>
-                </View>
+                <Text style={styles.userName}>{fullName || user?.username || 'HumanOS User'}</Text>
+                {isPro && (
+                  <View style={styles.verifiedBadge}>
+                    <Text style={styles.verifiedText}>✓ PRO</Text>
+                  </View>
+                )}
               </View>
-              <Text style={styles.userEmail}>{email}</Text>
+              <Text style={styles.userEmail}>{email || 'No email registered'}</Text>
 
               <View style={styles.userMetaBadges}>
-                <View style={styles.metaBadge}>
-                  <Text style={styles.metaBadgeText}>{gender}</Text>
-                </View>
-                <View style={styles.metaBadge}>
-                  <Text style={styles.metaBadgeText}>{phoneNumber}</Text>
-                </View>
+                {gender ? (
+                  <View style={styles.metaBadge}>
+                    <Text style={styles.metaBadgeText}>{gender}</Text>
+                  </View>
+                ) : null}
+                {phoneNumber ? (
+                  <View style={styles.metaBadge}>
+                    <Text style={styles.metaBadgeText}>{phoneNumber}</Text>
+                  </View>
+                ) : null}
               </View>
             </View>
           </View>
@@ -279,17 +393,17 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
           {/* Quick Profile Performance Counters */}
           <View style={styles.statsStrip}>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>98%</Text>
+              <Text style={styles.statValue}>{securityScore ? `${securityScore}%` : '0%'}</Text>
               <Text style={styles.statLabel}>Security Score</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>14 Days</Text>
+              <Text style={styles.statValue}>{activeStreak > 0 ? `${activeStreak} Days` : '0 Days'}</Text>
               <Text style={styles.statLabel}>Active Streak</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>Active</Text>
+              <Text style={styles.statValue}>{memberStatus || 'Active'}</Text>
               <Text style={styles.statLabel}>Member Status</Text>
             </View>
           </View>
@@ -346,7 +460,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
               <View style={styles.infoTexts}>
                 <Text style={styles.infoLabel}>Full Name</Text>
-                <Text style={styles.infoValue}>{fullName}</Text>
+                <Text style={styles.infoValue}>{fullName || 'Not provided'}</Text>
               </View>
             </View>
 
@@ -356,7 +470,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
               <View style={styles.infoTexts}>
                 <Text style={styles.infoLabel}>Email</Text>
-                <Text style={styles.infoValue}>{email}</Text>
+                <Text style={styles.infoValue}>{email || 'Not provided'}</Text>
               </View>
             </View>
 
@@ -366,7 +480,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
               <View style={styles.infoTexts}>
                 <Text style={styles.infoLabel}>Phone</Text>
-                <Text style={styles.infoValue}>{phoneNumber}</Text>
+                <Text style={styles.infoValue}>{phoneNumber || 'Not provided'}</Text>
               </View>
             </View>
 
@@ -376,7 +490,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
               <View style={styles.infoTexts}>
                 <Text style={styles.infoLabel}>Gender</Text>
-                <Text style={styles.infoValue}>{gender}</Text>
+                <Text style={styles.infoValue}>{gender || 'Not specified'}</Text>
               </View>
             </View>
 
@@ -386,7 +500,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
               <View style={styles.infoTexts}>
                 <Text style={styles.infoLabel}>Date of Birth</Text>
-                <Text style={styles.infoValue}>{dob}</Text>
+                <Text style={styles.infoValue}>{dob || 'Not specified'}</Text>
               </View>
             </View>
           </View>
@@ -1169,6 +1283,548 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                 ]}
               >
                 <Text style={styles.modalDoneBtnText}>Done</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 5. HELP CENTER MODAL */}
+      <Modal
+        visible={helpCenterModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setHelpCenterModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalKicker}>KNOWLEDGE BASE & GUIDES</Text>
+                <Text style={styles.modalTitle}>Help Center</Text>
+              </View>
+              <Pressable
+                onPress={() => setHelpCenterModalVisible(false)}
+                style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              >
+                <Text style={styles.modalCloseButton}>✕</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              {/* Search Bar */}
+              <View style={styles.searchBarContainer}>
+                <Text style={styles.searchIcon}>🔍</Text>
+                <TextInput
+                  style={[styles.searchInput, isWeb && styles.webOutlineNone]}
+                  placeholder="Search questions or topics..."
+                  placeholderTextColor="#94A3B8"
+                  value={faqSearchQuery}
+                  onChangeText={setFaqSearchQuery}
+                />
+                {faqSearchQuery.length > 0 && (
+                  <Pressable onPress={() => setFaqSearchQuery('')} style={({ pressed }) => [pressed && styles.pressedOpacity]}>
+                    <Text style={styles.clearSearchText}>✕</Text>
+                  </Pressable>
+                )}
+              </View>
+
+              {/* Category Pills */}
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.faqCategoryScroll}>
+                <View style={styles.faqCategoryRow}>
+                  {faqCategories.map((cat) => (
+                    <Pressable
+                      key={cat}
+                      onPress={() => setSelectedFaqCategory(cat)}
+                      style={[
+                        styles.faqCategoryPill,
+                        selectedFaqCategory === cat && styles.faqCategoryPillActive,
+                        isWeb && styles.webPointer,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.faqCategoryPillText,
+                          selectedFaqCategory === cat && styles.faqCategoryPillTextActive,
+                        ]}
+                      >
+                        {cat}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </ScrollView>
+
+              {/* FAQ Accordion List */}
+              <View style={styles.faqListContainer}>
+                {faqData
+                  .filter((item) => {
+                    const matchesCat = selectedFaqCategory === 'All' || item.category === selectedFaqCategory;
+                    const matchesSearch =
+                      faqSearchQuery.trim() === '' ||
+                      item.question.toLowerCase().includes(faqSearchQuery.toLowerCase()) ||
+                      item.answer.toLowerCase().includes(faqSearchQuery.toLowerCase());
+                    return matchesCat && matchesSearch;
+                  })
+                  .map((item, index) => {
+                    const isExpanded = expandedFaqIndex === index;
+                    return (
+                      <Pressable
+                        key={index}
+                        onPress={() => setExpandedFaqIndex(isExpanded ? null : index)}
+                        style={({ pressed }) => [
+                          styles.faqCard,
+                          isExpanded && styles.faqCardActive,
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
+                        ]}
+                      >
+                        <View style={styles.faqCardHeader}>
+                          <View style={styles.faqCategoryBadge}>
+                            <Text style={styles.faqCategoryBadgeText}>{item.category.toUpperCase()}</Text>
+                          </View>
+                          <Text style={styles.faqQuestion}>{item.question}</Text>
+                          <Text style={styles.faqChevron}>{isExpanded ? '▲' : '▼'}</Text>
+                        </View>
+                        {isExpanded && (
+                          <View style={styles.faqAnswerContainer}>
+                            <Text style={styles.faqAnswerText}>{item.answer}</Text>
+                          </View>
+                        )}
+                      </Pressable>
+                    );
+                  })}
+              </View>
+
+              {/* Need Live Help Card */}
+              <View style={styles.supportPromoCard}>
+                <Text style={styles.supportPromoIcon}>💬</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.supportPromoTitle}>Can't find what you need?</Text>
+                  <Text style={styles.supportPromoSub}>Our technical support team is standing by 24/7.</Text>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    setHelpCenterModalVisible(false);
+                    setContactSupportModalVisible(true);
+                  }}
+                  style={({ pressed }) => [
+                    styles.supportPromoBtn,
+                    isWeb && styles.webPointer,
+                    pressed && styles.pressedOpacity,
+                  ]}
+                >
+                  <Text style={styles.supportPromoBtnText}>Contact</Text>
+                </Pressable>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActionRow}>
+              <Pressable
+                onPress={() => setHelpCenterModalVisible(false)}
+                style={({ pressed }) => [
+                  styles.modalDoneBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Text style={styles.modalDoneBtnText}>Close</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 6. CONTACT SUPPORT MODAL */}
+      <Modal
+        visible={contactSupportModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setContactSupportModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalKicker}>HUMANOS HELP DESK</Text>
+                <Text style={styles.modalTitle}>Contact Support</Text>
+              </View>
+              <Pressable
+                onPress={() => setContactSupportModalVisible(false)}
+                style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              >
+                <Text style={styles.modalCloseButton}>✕</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              <View style={styles.supportHeaderBanner}>
+                <Text style={styles.supportHeaderIcon}>🎧</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.supportHeaderTitle}>Dedicated Priority Support</Text>
+                  <Text style={styles.supportHeaderSub}>Typical response time: under 2 hours</Text>
+                </View>
+              </View>
+
+              {/* Category Selector */}
+              <View style={styles.modalInputGroup}>
+                <Text style={styles.modalInputLabel}>Issue Category</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                  <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
+                    {supportCategories.map((cat) => (
+                      <Pressable
+                        key={cat}
+                        onPress={() => setSupportCategory(cat)}
+                        style={[
+                          styles.catPill,
+                          supportCategory === cat && styles.catPillActive,
+                          isWeb && styles.webPointer,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.catPillText,
+                            supportCategory === cat && styles.catPillTextActive,
+                          ]}
+                        >
+                          {cat}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </ScrollView>
+              </View>
+
+              {/* Subject */}
+              <View style={styles.modalInputGroup}>
+                <Text style={styles.modalInputLabel}>Subject</Text>
+                <TextInput
+                  style={[styles.modalInput, isWeb && styles.webOutlineNone]}
+                  placeholder="Brief summary of your question or issue"
+                  placeholderTextColor="#94A3B8"
+                  value={supportSubject}
+                  onChangeText={setSupportSubject}
+                />
+              </View>
+
+              {/* Message */}
+              <View style={styles.modalInputGroup}>
+                <Text style={styles.modalInputLabel}>Message / Description</Text>
+                <TextInput
+                  style={[
+                    styles.modalInput,
+                    { height: 100, textAlignVertical: 'top', paddingTop: 10 },
+                    isWeb && styles.webOutlineNone,
+                  ]}
+                  multiline
+                  numberOfLines={4}
+                  placeholder="Please describe what you are experiencing in detail..."
+                  placeholderTextColor="#94A3B8"
+                  value={supportMessage}
+                  onChangeText={setSupportMessage}
+                />
+              </View>
+
+              {/* Email direct line info */}
+              <View style={styles.supportDirectInfo}>
+                <Text style={styles.supportDirectInfoText}>
+                  ✉️ Direct Email:{' '}
+                  <Text style={{ fontWeight: '700', color: '#4F46E5' }}>support@humanos.app</Text>
+                </Text>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActionRow}>
+              <Pressable
+                onPress={() => setContactSupportModalVisible(false)}
+                style={({ pressed }) => [
+                  styles.modalCancelBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleSendSupportMessage}
+                style={({ pressed }) => [
+                  styles.modalSaveBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.buttonPressed,
+                ]}
+              >
+                <Text style={styles.modalSaveBtnText}>Submit Ticket ↗</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 7. ABOUT HUMANOS MODAL */}
+      <Modal
+        visible={aboutModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setAboutModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalKicker}>MISSION & VISION</Text>
+                <Text style={styles.modalTitle}>About HumanOS</Text>
+              </View>
+              <Pressable
+                onPress={() => setAboutModalVisible(false)}
+                style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              >
+                <Text style={styles.modalCloseButton}>✕</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              {/* Brand Center */}
+              <View style={styles.aboutHeroBlock}>
+                <View style={styles.aboutLogoWrap}>
+                  <Text style={styles.aboutLogoEmoji}>🌱</Text>
+                </View>
+                <Text style={styles.aboutBrandTitle}>HumanOS</Text>
+                <Text style={styles.aboutVersionBadge}>v1.0.0 Pro • Obsidian Edition</Text>
+                <Text style={styles.aboutTagline}>
+                  The personal operating system engineered to elevate human cognitive focus, metabolic vitality, and execution velocity.
+                </Text>
+              </View>
+
+              {/* Core Philosophy Cards */}
+              <View style={styles.modalSectionBlock}>
+                <Text style={styles.modalSectionHeading}>Core Principles</Text>
+
+                <View style={styles.aboutPillarRow}>
+                  <Text style={styles.aboutPillarIcon}>🧠</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.aboutPillarTitle}>Cognitive Harmony</Text>
+                    <Text style={styles.aboutPillarDesc}>
+                      Task prioritization designed around circadian rhythm cycles and peak mental clarity.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.aboutPillarRow}>
+                  <Text style={styles.aboutPillarIcon}>♡</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.aboutPillarTitle}>Biological Telemetry</Text>
+                    <Text style={styles.aboutPillarDesc}>
+                      Real-time biometric tracking to maintain sustained high energy without burnout.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={[styles.aboutPillarRow, { borderBottomWidth: 0 }]}>
+                  <Text style={styles.aboutPillarIcon}>🛡️</Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.aboutPillarTitle}>Zero-Compromise Privacy</Text>
+                    <Text style={styles.aboutPillarDesc}>
+                      Hardware-backed encryption and total personal data sovereignty.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Build Meta */}
+              <View style={styles.aboutMetaRow}>
+                <Text style={styles.aboutMetaText}>Designed for high performance individuals worldwide.</Text>
+                <Text style={styles.aboutMetaCopyright}>© 2026 HumanOS Technologies, Inc. All rights reserved.</Text>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActionRow}>
+              <Pressable
+                onPress={() => setAboutModalVisible(false)}
+                style={({ pressed }) => [
+                  styles.modalDoneBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Text style={styles.modalDoneBtnText}>Done</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 8. TERMS & CONDITIONS MODAL */}
+      <Modal
+        visible={termsModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setTermsModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalKicker}>LEGAL & POLICIES</Text>
+                <Text style={styles.modalTitle}>Terms & Conditions</Text>
+              </View>
+              <Pressable
+                onPress={() => setTermsModalVisible(false)}
+                style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              >
+                <Text style={styles.modalCloseButton}>✕</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              <Text style={styles.legalEffectiveDate}>Effective Date: August 2026 • Version 2.1</Text>
+
+              <View style={styles.legalSection}>
+                <Text style={styles.legalSectionTitle}>1. Acceptance of Terms</Text>
+                <Text style={styles.legalParagraph}>
+                  By creating an account or accessing HumanOS services, you acknowledge that you have read, understood, and agree to be legally bound by these Terms of Service. If you do not agree with any portion, you must discontinue use immediately.
+                </Text>
+              </View>
+
+              <View style={styles.legalSection}>
+                <Text style={styles.legalSectionTitle}>2. Health & Wellness Disclaimer</Text>
+                <Text style={styles.legalParagraph}>
+                  HumanOS provides lifestyle tracking, cognitive routine optimization, and productivity telemetry. HumanOS is not a licensed medical provider. The software does not diagnose, treat, or prevent any illness or condition. Always seek professional advice from qualified healthcare providers.
+                </Text>
+              </View>
+
+              <View style={styles.legalSection}>
+                <Text style={styles.legalSectionTitle}>3. User Account & Data Security</Text>
+                <Text style={styles.legalParagraph}>
+                  You are responsible for maintaining the confidentiality of your authentication credentials. You agree to notify HumanOS immediately upon discovering any unauthorized breach or suspicious activity regarding your account.
+                </Text>
+              </View>
+
+              <View style={styles.legalSection}>
+                <Text style={styles.legalSectionTitle}>4. Subscriptions & Pro Services</Text>
+                <Text style={styles.legalParagraph}>
+                  Certain advanced modules (such as AI Telemetry Coaching and biometric deep analytics) may require an active Pro subscription. Subscriptions automatically renew unless cancelled at least 24 hours prior to the billing cycle end.
+                </Text>
+              </View>
+
+              <View style={styles.legalSection}>
+                <Text style={styles.legalSectionTitle}>5. Intellectual Property & License</Text>
+                <Text style={styles.legalParagraph}>
+                  HumanOS and its original content, features, and functionality remain the exclusive property of HumanOS Technologies, Inc. You are granted a limited, personal, non-exclusive license to use the app for individual purposes.
+                </Text>
+              </View>
+
+              <View style={styles.legalSection}>
+                <Text style={styles.legalSectionTitle}>6. Termination & Inquiries</Text>
+                <Text style={styles.legalParagraph}>
+                  We may terminate or suspend access to our service immediately, without prior notice, for conduct that violates these Terms. For legal inquiries, contact legal@humanos.app.
+                </Text>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActionRow}>
+              <Pressable
+                onPress={() => {
+                  setTermsModalVisible(false);
+                  showNotice('Terms & Conditions acknowledged');
+                }}
+                style={({ pressed }) => [
+                  styles.modalDoneBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Text style={styles.modalDoneBtnText}>I Understand & Accept</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 9. PRIVACY POLICY MODAL */}
+      <Modal
+        visible={privacyModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setPrivacyModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <View>
+                <Text style={styles.modalKicker}>PRIVACY & DATA SOVEREIGNTY</Text>
+                <Text style={styles.modalTitle}>Privacy Policy</Text>
+              </View>
+              <Pressable
+                onPress={() => setPrivacyModalVisible(false)}
+                style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              >
+                <Text style={styles.modalCloseButton}>✕</Text>
+              </Pressable>
+            </View>
+
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
+              <View style={styles.privacyTrustBanner}>
+                <Text style={styles.privacyTrustIcon}>🔒</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.privacyTrustTitle}>Zero-Ad Data Architecture</Text>
+                  <Text style={styles.privacyTrustSub}>Your personal metrics are never sold or monetized.</Text>
+                </View>
+              </View>
+
+              <Text style={styles.legalEffectiveDate}>Effective Date: August 2026 • GDPR & CCPA Compliant</Text>
+
+              <View style={styles.legalSection}>
+                <Text style={styles.legalSectionTitle}>1. Information We Collect</Text>
+                <Text style={styles.legalParagraph}>
+                  • Account details: Full name, verified email, and profile preferences.{'\n'}
+                  • Daily logs: Tasks completed, habit streak tracking, and daily focus logs.{'\n'}
+                  • Telemetry: Voluntary metrics such as resting heart rate, sleep duration, and active minutes.
+                </Text>
+              </View>
+
+              <View style={styles.legalSection}>
+                <Text style={styles.legalSectionTitle}>2. Military-Grade Data Encryption</Text>
+                <Text style={styles.legalParagraph}>
+                  All biometric and personal data is encrypted at rest using AES-256 and transmitted exclusively via authenticated TLS 1.3 tunnels. Encryption keys remain segregated from raw user identities.
+                </Text>
+              </View>
+
+              <View style={styles.legalSection}>
+                <Text style={styles.legalSectionTitle}>3. AI Processing & Zero Retention</Text>
+                <Text style={styles.legalParagraph}>
+                  When using AI Personalization, contextual telemetry prompts are evaluated in transient memory sessions. We do not use your private logs to train public language models without your consent.
+                </Text>
+              </View>
+
+              <View style={styles.legalSection}>
+                <Text style={styles.legalSectionTitle}>4. Your Rights & One-Click Erasure</Text>
+                <Text style={styles.legalParagraph}>
+                  Under GDPR and CCPA, you retain the unconditional right to export your complete telemetry archive or execute a permanent, irreversible purge of your account data directly from the Security Center.
+                </Text>
+              </View>
+
+              <View style={styles.legalSection}>
+                <Text style={styles.legalSectionTitle}>5. Contact the Data Protection Officer</Text>
+                <Text style={styles.legalParagraph}>
+                  If you have questions regarding our privacy architecture or wish to request data verification, email our Data Protection Officer at privacy@humanos.app.
+                </Text>
+              </View>
+            </ScrollView>
+
+            <View style={styles.modalActionRow}>
+              <Pressable
+                onPress={() => {
+                  setPrivacyModalVisible(false);
+                  showNotice('Privacy Policy acknowledged');
+                }}
+                style={({ pressed }) => [
+                  styles.modalDoneBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Text style={styles.modalDoneBtnText}>Understood</Text>
               </Pressable>
             </View>
           </View>
@@ -2004,6 +2660,354 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
   },
+  /* HELP CENTER & FAQ MODAL STYLES */
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginBottom: 12,
+    gap: 8,
+  },
+  searchIcon: {
+    fontSize: 14,
+  },
+  searchInput: {
+    flex: 1,
+    color: '#0F172A',
+    fontSize: 13,
+    padding: 0,
+  },
+  clearSearchText: {
+    color: '#94A3B8',
+    fontSize: 13,
+    fontWeight: '700',
+    paddingHorizontal: 4,
+  },
+  faqCategoryScroll: {
+    marginBottom: 14,
+  },
+  faqCategoryRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  faqCategoryPill: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  faqCategoryPillActive: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#4F46E5',
+  },
+  faqCategoryPillText: {
+    color: '#64748B',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  faqCategoryPillTextActive: {
+    color: '#FFFFFF',
+  },
+  faqListContainer: {
+    gap: 10,
+    marginBottom: 14,
+  },
+  faqCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  faqCardActive: {
+    borderColor: '#C7D2FE',
+    backgroundColor: '#F5F7FF',
+  },
+  faqCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  faqCategoryBadge: {
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  faqCategoryBadgeText: {
+    color: '#4F46E5',
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 0.5,
+  },
+  faqQuestion: {
+    flex: 1,
+    color: '#0F172A',
+    fontSize: 12.5,
+    fontWeight: '700',
+    lineHeight: 17,
+  },
+  faqChevron: {
+    color: '#94A3B8',
+    fontSize: 10,
+    paddingLeft: 4,
+  },
+  faqAnswerContainer: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+  },
+  faqAnswerText: {
+    color: '#475569',
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  supportPromoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#EEF2FF',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    marginBottom: 10,
+  },
+  supportPromoIcon: {
+    fontSize: 22,
+  },
+  supportPromoTitle: {
+    color: '#1E1B4B',
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  supportPromoSub: {
+    color: '#4338CA',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  supportPromoBtn: {
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+  },
+  supportPromoBtnText: {
+    color: '#FFFFFF',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+
+  /* CONTACT SUPPORT MODAL STYLES */
+  supportHeaderBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#EEF2FF',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    marginBottom: 14,
+  },
+  supportHeaderIcon: {
+    fontSize: 24,
+  },
+  supportHeaderTitle: {
+    color: '#1E1B4B',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  supportHeaderSub: {
+    color: '#4338CA',
+    fontSize: 11,
+    marginTop: 2,
+  },
+  catPill: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  catPillActive: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#4F46E5',
+  },
+  catPillText: {
+    color: '#64748B',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  catPillTextActive: {
+    color: '#FFFFFF',
+  },
+  supportDirectInfo: {
+    backgroundColor: '#F8FAFC',
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  supportDirectInfoText: {
+    color: '#64748B',
+    fontSize: 11.5,
+  },
+
+  /* ABOUT HUMANOS MODAL STYLES */
+  aboutHeroBlock: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    marginBottom: 14,
+  },
+  aboutLogoWrap: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#818CF8',
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    marginBottom: 10,
+  },
+  aboutLogoEmoji: {
+    fontSize: 30,
+  },
+  aboutBrandTitle: {
+    color: '#0F172A',
+    fontSize: 22,
+    fontWeight: '850',
+    letterSpacing: -0.5,
+  },
+  aboutVersionBadge: {
+    color: '#4F46E5',
+    fontSize: 11,
+    fontWeight: '800',
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+  aboutTagline: {
+    color: '#475569',
+    fontSize: 12.5,
+    lineHeight: 18,
+    textAlign: 'center',
+    paddingHorizontal: 12,
+  },
+  aboutPillarRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+  },
+  aboutPillarIcon: {
+    fontSize: 20,
+    marginTop: 2,
+  },
+  aboutPillarTitle: {
+    color: '#0F172A',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  aboutPillarDesc: {
+    color: '#64748B',
+    fontSize: 11.5,
+    lineHeight: 16,
+    marginTop: 2,
+  },
+  aboutMetaRow: {
+    alignItems: 'center',
+    paddingVertical: 8,
+    gap: 4,
+  },
+  aboutMetaText: {
+    color: '#64748B',
+    fontSize: 11,
+    textAlign: 'center',
+  },
+  aboutMetaCopyright: {
+    color: '#94A3B8',
+    fontSize: 10,
+    fontWeight: '600',
+  },
+
+  /* LEGAL & PRIVACY MODAL STYLES */
+  legalEffectiveDate: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '700',
+    marginBottom: 14,
+    backgroundColor: '#F8FAFC',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+  },
+  legalSection: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    marginBottom: 10,
+  },
+  legalSectionTitle: {
+    color: '#0F172A',
+    fontSize: 12.5,
+    fontWeight: '800',
+    marginBottom: 6,
+  },
+  legalParagraph: {
+    color: '#475569',
+    fontSize: 11.5,
+    lineHeight: 17,
+  },
+  privacyTrustBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: '#ECFDF5',
+    padding: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    marginBottom: 12,
+  },
+  privacyTrustIcon: {
+    fontSize: 22,
+  },
+  privacyTrustTitle: {
+    color: '#065F46',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  privacyTrustSub: {
+    color: '#047857',
+    fontSize: 11,
+    marginTop: 2,
+  },
+
   pressedOpacity: {
     opacity: 0.65,
   },

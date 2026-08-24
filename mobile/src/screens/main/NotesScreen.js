@@ -32,40 +32,15 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
   const [noteBody, setNoteBody] = useState('');
   const [noteTag, setNoteTag] = useState('Work');
 
-  const [notes, setNotes] = useState([
-    {
-      id: '1',
-      title: 'HumanOS Core Philosophy & Architecture',
-      body: 'Designing an operating system for human intention. Calm interfaces, zero cognitive drag, ruthless prioritization.',
-      tag: 'Strategy',
-      pinned: true,
-      updatedAt: '2 hours ago',
-    },
-    {
-      id: '2',
-      title: 'Quarterly OKRs & Personal Growth Targets',
-      body: '1. Ship v1 mobile assistant with native local state.\n2. Maintain 4-day weekly workout streak.\n3. Read 12 strategic books.',
-      tag: 'Goals',
-      pinned: true,
-      updatedAt: 'Yesterday',
-    },
-    {
-      id: '3',
-      title: 'Meeting Notes: Architecture Review',
-      body: 'Key decisions on safe-area handling, SQLite schema migrations, and real-time offline caching sync.',
-      tag: 'Work',
-      pinned: false,
-      updatedAt: 'Aug 17',
-    },
-    {
-      id: '4',
-      title: 'Cognitive Load & Deep Work Experiments',
-      body: 'Morning 90-minute phone-free sprint yielded 3x output compared to staggered working blocks.',
-      tag: 'Research',
-      pinned: false,
-      updatedAt: 'Aug 14',
-    },
-  ]);
+  // Notes State (dynamically bound to database user)
+  const [notes, setNotes] = useState(user?.notes || []);
+
+  // Sync state whenever user data changes from database
+  React.useEffect(() => {
+    if (user && user.notes) {
+      setNotes(user.notes || []);
+    }
+  }, [user]);
 
   const showNotice = (msg) => {
     setNoticeMessage(msg);
@@ -208,26 +183,36 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
           </ScrollView>
 
           {/* Notes Grid */}
-          <View style={styles.notesList}>
-            {filteredNotes.map((note) => (
-              <View key={note.id} style={styles.noteCard}>
-                <View style={styles.noteHeaderRow}>
-                  <View style={styles.noteTagBadge}>
-                    <Text style={styles.noteTagText}>{note.tag}</Text>
+          {filteredNotes.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 36, gap: 6 }}>
+              <Text style={{ fontSize: 30 }}>📝</Text>
+              <Text style={{ color: '#0F172A', fontSize: 14, fontWeight: '700' }}>No notes captured yet</Text>
+              <Text style={{ color: '#64748B', fontSize: 12, textAlign: 'center' }}>
+                Tap "+ Note" above to capture thoughts, ideas, or architectural blueprints.
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.notesList}>
+              {filteredNotes.map((note) => (
+                <View key={note.id} style={styles.noteCard}>
+                  <View style={styles.noteHeaderRow}>
+                    <View style={styles.noteTagBadge}>
+                      <Text style={styles.noteTagText}>{note.tag}</Text>
+                    </View>
+                    <Pressable onPress={() => togglePin(note.id)} hitSlop={8}>
+                      <Text style={[styles.pinIcon, note.pinned && styles.pinIconActive]}>
+                        {note.pinned ? '📌' : '📍'}
+                      </Text>
+                    </Pressable>
                   </View>
-                  <Pressable onPress={() => togglePin(note.id)} hitSlop={8}>
-                    <Text style={[styles.pinIcon, note.pinned && styles.pinIconActive]}>
-                      {note.pinned ? '📌' : '📍'}
-                    </Text>
-                  </Pressable>
-                </View>
 
-                <Text style={styles.noteTitle}>{note.title}</Text>
-                <Text style={styles.noteBody} numberOfLines={3}>{note.body}</Text>
-                <Text style={styles.noteFooter}>{note.updatedAt}</Text>
-              </View>
-            ))}
-          </View>
+                  <Text style={styles.noteTitle}>{note.title}</Text>
+                  <Text style={styles.noteBody} numberOfLines={3}>{note.body}</Text>
+                  <Text style={styles.noteFooter}>{note.updatedAt}</Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           <View style={{ height: 24 }} />
         </View>

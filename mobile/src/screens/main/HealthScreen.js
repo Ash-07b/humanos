@@ -32,79 +32,37 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null); // { type: 'record'|'med', id, name }
 
-  // AI Recommendation State
+  // AI Recommendation State (dynamically bound to database user)
   const [aiLoading, setAiLoading] = useState(false);
   const [currentAiRecommendation, setCurrentAiRecommendation] = useState(
-    'Your recent health records show a consistent heart rate and stable weight. Consider maintaining your current activity level and keeping a regular sleep schedule.'
+    user?.currentAiRecommendation ||
+    'Add your daily health readings to receive personalized biometric recovery recommendations.'
   );
-  const [aiHistory, setAiHistory] = useState([
-    {
-      id: '1',
-      text: 'Maintain a consistent sleep schedule to support circadian rhythm and focus.',
-      date: 'Today • 07:00 AM',
-    },
-    {
-      id: '2',
-      text: 'Consider staying hydrated throughout the day; your recovery was 12% faster on high hydration days.',
-      date: 'Yesterday • 08:15 AM',
-    },
-    {
-      id: '3',
-      text: 'Great cardiovascular stability observed during your deep work and morning walks.',
-      date: 'Aug 18 • 09:30 AM',
-    },
-  ]);
+  const [aiHistory, setAiHistory] = useState(user?.aiHistory || []);
   const [showAllAiHistory, setShowAllAiHistory] = useState(false);
   const [showAllRecords, setShowAllRecords] = useState(false);
 
-  // Health Records State
-  const [records, setRecords] = useState([
-    {
-      id: '1',
-      type: 'Heart Rate',
-      icon: '♥',
-      value: '72',
-      unit: 'bpm',
-      dateTime: 'Today • 08:30 AM',
-      notes: 'Resting morning measurement',
-    },
-    {
-      id: '2',
-      type: 'Blood Pressure',
-      icon: '🩺',
-      value: '120/80',
-      unit: 'mmHg',
-      dateTime: 'Today • 08:35 AM',
-      notes: 'Optimal baseline arterial pressure',
-    },
-    {
-      id: '3',
-      type: 'Weight',
-      icon: '⚖️',
-      value: '68',
-      unit: 'kg',
-      dateTime: 'Yesterday • 07:45 AM',
-      notes: 'Post-hydration weigh-in',
-    },
-    {
-      id: '4',
-      type: 'Temperature',
-      icon: '🌡️',
-      value: '36.7',
-      unit: '°C',
-      dateTime: 'Yesterday • 08:00 AM',
-      notes: 'Normal body temperature',
-    },
-    {
-      id: '5',
-      type: 'Blood Oxygen',
-      icon: '🫁',
-      value: '99',
-      unit: '% SpO2',
-      dateTime: 'Aug 18 • 09:00 AM',
-      notes: 'Normal blood oxygen saturation',
-    },
-  ]);
+  // Health Records & Medications State (dynamically bound to database user)
+  const [records, setRecords] = useState(user?.healthRecords || user?.records || []);
+  const [medications, setMedications] = useState(user?.medications || []);
+
+  // Sync state whenever user data changes from database
+  React.useEffect(() => {
+    if (user) {
+      if (user.currentAiRecommendation) {
+        setCurrentAiRecommendation(user.currentAiRecommendation);
+      }
+      if (user.aiHistory) {
+        setAiHistory(user.aiHistory || []);
+      }
+      if (user.healthRecords || user.records) {
+        setRecords(user.healthRecords || user.records || []);
+      }
+      if (user.medications) {
+        setMedications(user.medications || []);
+      }
+    }
+  }, [user]);
 
   // Form State for Health Record
   const [recordType, setRecordType] = useState('Heart Rate');
@@ -113,37 +71,6 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
   const [recordDate, setRecordDate] = useState('Today');
   const [recordTime, setRecordTime] = useState('09:00 AM');
   const [recordNotes, setRecordNotes] = useState('');
-
-  // Medications State
-  const [medications, setMedications] = useState([
-    {
-      id: '1',
-      name: 'Vitamin D3',
-      dosage: '1000 IU',
-      frequency: 'Once daily',
-      reminderTime: '08:00 AM',
-      status: 'Active',
-      instructions: 'Take with morning meal',
-    },
-    {
-      id: '2',
-      name: 'Paracetamol',
-      dosage: '500 mg',
-      frequency: 'As needed',
-      reminderTime: 'Flexible',
-      status: 'Active',
-      instructions: 'For occasional headache or muscle fatigue',
-    },
-    {
-      id: '3',
-      name: 'Omega-3 EPA/DHA',
-      dosage: '1000 mg',
-      frequency: 'Once daily',
-      reminderTime: '12:30 PM',
-      status: 'Active',
-      instructions: 'Cognitive & cardiovascular support',
-    },
-  ]);
 
   // Form State for Medication
   const [medName, setMedName] = useState('');
@@ -380,7 +307,11 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                 <View style={[styles.indicatorIconWrap, { backgroundColor: '#FFE4E6' }]}>
                   <Text style={[styles.indicatorIcon, { color: '#E11D48' }]}>♥</Text>
                 </View>
-                <Text style={styles.indicatorValue}>72 bpm</Text>
+                <Text style={styles.indicatorValue}>
+                  {records.find((r) => r.type === 'Heart Rate')?.value
+                    ? `${records.find((r) => r.type === 'Heart Rate').value} ${records.find((r) => r.type === 'Heart Rate').unit || 'bpm'}`
+                    : '-- bpm'}
+                </Text>
                 <Text style={styles.indicatorLabel}>Heart Rate</Text>
               </View>
 
@@ -388,7 +319,9 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                 <View style={[styles.indicatorIconWrap, { backgroundColor: '#EEF2FF' }]}>
                   <Text style={[styles.indicatorIcon, { color: '#4F46E5' }]}>🌙</Text>
                 </View>
-                <Text style={styles.indicatorValue}>7h 30m</Text>
+                <Text style={styles.indicatorValue}>
+                  {user?.sleepDuration || records.find((r) => r.type === 'Sleep')?.value || '--'}
+                </Text>
                 <Text style={styles.indicatorLabel}>Sleep</Text>
               </View>
 
@@ -396,7 +329,11 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                 <View style={[styles.indicatorIconWrap, { backgroundColor: '#CCFBF1' }]}>
                   <Text style={[styles.indicatorIcon, { color: '#0F766E' }]}>⚖️</Text>
                 </View>
-                <Text style={styles.indicatorValue}>68 kg</Text>
+                <Text style={styles.indicatorValue}>
+                  {records.find((r) => r.type === 'Weight')?.value
+                    ? `${records.find((r) => r.type === 'Weight').value} ${records.find((r) => r.type === 'Weight').unit || 'kg'}`
+                    : '-- kg'}
+                </Text>
                 <Text style={styles.indicatorLabel}>Weight</Text>
               </View>
             </View>
@@ -718,50 +655,84 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
               </View>
             </View>
 
-            <View style={styles.trendsList}>
-              {/* Sleep */}
-              <View style={styles.trendItem}>
-                <View style={styles.trendHeader}>
-                  <Text style={styles.trendLabel}>🌙 Sleep Duration</Text>
-                  <Text style={[styles.trendValue, { color: '#4F46E5' }]}>7h 30m / 8h</Text>
-                </View>
-                <View style={[styles.trendTrack, { backgroundColor: '#EEF2FF' }]}>
-                  <View style={[styles.trendFill, { width: '85%', backgroundColor: '#6366F1' }]} />
-                </View>
-              </View>
+            {(() => {
+              const sleepHours = user?.healthTrends?.sleepHours ?? user?.sleepHours ?? 0;
+              const sleepTarget = user?.healthTrends?.sleepTarget ?? 8;
+              const sleepPercent = sleepHours > 0 ? Math.min(100, Math.round((sleepHours / sleepTarget) * 100)) : 0;
 
-              {/* Activity */}
-              <View style={styles.trendItem}>
-                <View style={styles.trendHeader}>
-                  <Text style={styles.trendLabel}>⚡ Physical Activity</Text>
-                  <Text style={[styles.trendValue, { color: '#0D9488' }]}>72% target</Text>
-                </View>
-                <View style={[styles.trendTrack, { backgroundColor: '#CCFBF1' }]}>
-                  <View
-                    style={[
-                      styles.trendFill,
-                      { width: '72%', backgroundColor: '#0D9488' },
-                    ]}
-                  />
-                </View>
-              </View>
+              const activityPercent = user?.healthTrends?.activityPercent ?? user?.activityScore ?? 0;
 
-              {/* Water */}
-              <View style={styles.trendItem}>
-                <View style={styles.trendHeader}>
-                  <Text style={styles.trendLabel}>💧 Hydration Level</Text>
-                  <Text style={[styles.trendValue, { color: '#0284C7' }]}>6 / 8 glasses</Text>
+              const waterGlasses = user?.healthTrends?.waterGlasses ?? user?.waterGlasses ?? 0;
+              const waterTarget = user?.healthTrends?.waterTarget ?? 8;
+              const waterPercent = waterGlasses > 0 ? Math.min(100, Math.round((waterGlasses / waterTarget) * 100)) : 0;
+
+              return (
+                <View style={styles.trendsList}>
+                  {/* Sleep */}
+                  <View style={styles.trendItem}>
+                    <View style={styles.trendHeader}>
+                      <Text style={styles.trendLabel}>🌙 Sleep Duration</Text>
+                      <Text style={[styles.trendValue, { color: '#4F46E5' }]}>
+                        {sleepHours > 0 ? `${sleepHours}h / ${sleepTarget}h` : '-- / 8h'}
+                      </Text>
+                    </View>
+                    <View style={[styles.trendTrack, { backgroundColor: '#EEF2FF' }]}>
+                      <View
+                        style={[
+                          styles.trendFill,
+                          {
+                            width: `${Math.max(sleepPercent > 0 ? 5 : 0, sleepPercent)}%`,
+                            backgroundColor: '#6366F1',
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Activity */}
+                  <View style={styles.trendItem}>
+                    <View style={styles.trendHeader}>
+                      <Text style={styles.trendLabel}>⚡ Physical Activity</Text>
+                      <Text style={[styles.trendValue, { color: '#0D9488' }]}>
+                        {activityPercent > 0 ? `${activityPercent}% target` : '--% target'}
+                      </Text>
+                    </View>
+                    <View style={[styles.trendTrack, { backgroundColor: '#CCFBF1' }]}>
+                      <View
+                        style={[
+                          styles.trendFill,
+                          {
+                            width: `${Math.max(activityPercent > 0 ? 5 : 0, Math.min(100, activityPercent))}%`,
+                            backgroundColor: '#0D9488',
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Water */}
+                  <View style={styles.trendItem}>
+                    <View style={styles.trendHeader}>
+                      <Text style={styles.trendLabel}>💧 Hydration Level</Text>
+                      <Text style={[styles.trendValue, { color: '#0284C7' }]}>
+                        {waterGlasses > 0 ? `${waterGlasses} / ${waterTarget} glasses` : '-- / 8 glasses'}
+                      </Text>
+                    </View>
+                    <View style={[styles.trendTrack, { backgroundColor: '#E0F2FE' }]}>
+                      <View
+                        style={[
+                          styles.trendFill,
+                          {
+                            width: `${Math.max(waterPercent > 0 ? 5 : 0, waterPercent)}%`,
+                            backgroundColor: '#0284C7',
+                          },
+                        ]}
+                      />
+                    </View>
+                  </View>
                 </View>
-                <View style={[styles.trendTrack, { backgroundColor: '#E0F2FE' }]}>
-                  <View
-                    style={[
-                      styles.trendFill,
-                      { width: '75%', backgroundColor: '#0284C7' },
-                    ]}
-                  />
-                </View>
-              </View>
-            </View>
+              );
+            })()}
           </View>
 
           <View style={{ height: 32 }} />
