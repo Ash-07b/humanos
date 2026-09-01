@@ -1,25 +1,44 @@
 import React from 'react';
 import { View, Text, Pressable, StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  LayoutDashboard,
+  ListTodo,
+  WalletCards,
+  HeartPulse,
+  UserRound,
+} from 'lucide-react-native';
+import { useTheme } from '../contexts/ThemeContext';
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Home', icon: '✦' },
-  { id: 'tasks', label: 'Tasks', icon: '✓' },
-  { id: 'finance', label: 'Finance', icon: '💳' },
-  { id: 'health', label: 'Health', icon: '♡' },
-  { id: 'profile', label: 'Profile', icon: '👤' },
+  { id: 'dashboard', label: 'Home', icon: LayoutDashboard },
+  { id: 'tasks', label: 'Tasks', icon: ListTodo },
+  { id: 'finance', label: 'Finance', icon: WalletCards },
+  { id: 'health', label: 'Health', icon: HeartPulse },
+  { id: 'profile', label: 'Profile', icon: UserRound },
 ];
 
 export default function BottomNavigation({ activeTab = 'dashboard', onTabPress }) {
   const isWeb = Platform.OS === 'web';
   const insets = useSafeAreaInsets();
+  const { theme, isDarkMode } = useTheme();
   const bottomPadding = insets.bottom > 0 ? insets.bottom : (Platform.OS === 'ios' ? 16 : 8);
 
   return (
     <View style={[styles.container, { paddingBottom: bottomPadding }]}>
-      <View style={styles.bar}>
+      <View
+        style={[
+          styles.bar,
+          {
+            backgroundColor: theme.colors.navBg,
+            borderColor: theme.colors.navBorder,
+            shadowColor: theme.colors.shadowColor,
+          },
+        ]}
+      >
         {NAV_ITEMS.map((item) => {
           const isActive = activeTab === item.id;
+          const IconComponent = item.icon;
           return (
             <Pressable
               key={item.id}
@@ -30,15 +49,39 @@ export default function BottomNavigation({ activeTab = 'dashboard', onTabPress }
                 pressed && styles.tabPressed,
               ]}
             >
-              <View style={[styles.iconContainer, isActive && styles.iconContainerActive]}>
-                <Text style={[styles.tabIcon, isActive && styles.tabIconActive]}>
-                  {item.icon}
-                </Text>
+              <View
+                style={[
+                  styles.iconContainer,
+                  isActive && {
+                    backgroundColor: isDarkMode
+                      ? 'rgba(99, 102, 241, 0.2)'
+                      : '#EEF2FF',
+                  },
+                ]}
+              >
+                <IconComponent
+                  size={18}
+                  color={isActive ? (isDarkMode ? '#818CF8' : '#4F46E5') : theme.colors.navInactiveIcon}
+                  strokeWidth={isActive ? 2.4 : 1.9}
+                />
               </View>
-              <Text style={[styles.tabLabel, isActive && styles.tabLabelActive]}>
+              <Text
+                style={[
+                  styles.tabLabel,
+                  { color: isActive ? theme.colors.navActiveText : theme.colors.navInactiveText },
+                  isActive && { fontWeight: '700' },
+                ]}
+              >
                 {item.label}
               </Text>
-              {isActive && <View style={styles.activeDot} />}
+              {isActive && (
+                <View
+                  style={[
+                    styles.activeDot,
+                    { backgroundColor: isDarkMode ? '#818CF8' : '#4F46E5' },
+                  ]}
+                />
+              )}
             </Pressable>
           );
         })}

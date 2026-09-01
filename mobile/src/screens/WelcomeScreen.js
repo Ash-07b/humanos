@@ -10,11 +10,19 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Clock,
+  HeartPulse,
+  TrendingUp,
+  Sparkles,
+  ArrowRight,
+} from 'lucide-react-native';
+import Logo from '../components/Logo';
 
 const focusItems = [
-  { icon: '◔', label: 'Focus', value: 'Deep Work' },
-  { icon: '♡', label: 'Wellbeing', value: 'Daily Calm' },
-  { icon: '↗', label: 'Growth', value: 'Habit Loops' },
+  { icon: Clock, label: 'Focus', value: 'Deep Work' },
+  { icon: HeartPulse, label: 'Wellbeing', value: 'Daily Calm' },
+  { icon: TrendingUp, label: 'Growth', value: 'Habit Loops' },
 ];
 
 export default function WelcomeScreen({ onBegin, onLogin }) {
@@ -31,11 +39,7 @@ export default function WelcomeScreen({ onBegin, onLogin }) {
     >
       <View style={[styles.hero, { minHeight: Math.max(360, height * 0.46) }]}>
         <View style={styles.topBar}>
-          <View style={styles.brandMark}>
-            <View style={styles.brandDot} />
-            <View style={[styles.brandDot, styles.brandDotOffset]} />
-          </View>
-          <Text style={styles.brand}>humanos</Text>
+          <Logo size={36} textSize={20} textColor="#F8FAFC" />
           <Pressable style={({ pressed }) => [styles.menuButton, isWeb && styles.webPointer, pressed && styles.secondaryPressed]}>
             <View style={styles.menuLine} />
             <View style={[styles.menuLine, styles.menuLineShort]} />
@@ -63,7 +67,6 @@ export default function WelcomeScreen({ onBegin, onLogin }) {
 
       <View style={styles.content}>
         <View style={styles.handle} />
-        <Text style={styles.sectionLabel}>A gentle dashboard for your life</Text>
 
         <View style={styles.card}>
           <View style={styles.cardHeader}>
@@ -75,18 +78,24 @@ export default function WelcomeScreen({ onBegin, onLogin }) {
               </Text>
             </View>
             <View style={styles.welcomeBadge}>
-              <Text style={styles.welcomeBadgeText}>🌱 START</Text>
+              <Sparkles size={11} color="#4F46E5" strokeWidth={2.4} />
+              <Text style={styles.welcomeBadgeText}>START</Text>
             </View>
           </View>
 
           <View style={styles.focusRow}>
-            {focusItems.map((item) => (
-              <View style={styles.focusItem} key={item.label}>
-                <Text style={styles.focusIcon}>{item.icon}</Text>
-                <Text style={styles.focusValue}>{item.value}</Text>
-                <Text style={styles.focusLabel}>{item.label}</Text>
-              </View>
-            ))}
+            {focusItems.map((item) => {
+              const IconComponent = item.icon;
+              return (
+                <View style={styles.focusItem} key={item.label}>
+                  <View style={styles.focusIconWrap}>
+                    <IconComponent size={16} color="#4F46E5" strokeWidth={2.2} />
+                  </View>
+                  <Text style={styles.focusValue}>{item.value}</Text>
+                  <Text style={styles.focusLabel}>{item.label}</Text>
+                </View>
+              );
+            })}
           </View>
         </View>
 
@@ -96,7 +105,7 @@ export default function WelcomeScreen({ onBegin, onLogin }) {
         >
           <Text style={styles.primaryButtonText}>Begin your day</Text>
           <View style={styles.arrowCircle}>
-            <Text style={styles.arrow}>→</Text>
+            <ArrowRight size={18} color="#FFFFFF" strokeWidth={2.5} />
           </View>
         </Pressable>
 
@@ -188,11 +197,11 @@ const styles = StyleSheet.create({
   cardKicker: { color: '#6366F1', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
   cardTitle: { color: '#0F172A', fontSize: 19, fontWeight: '800', letterSpacing: -0.5, marginTop: 4 },
   cardSubtitle: { color: '#475569', fontSize: 12, lineHeight: 18, marginTop: 6 },
-  welcomeBadge: { backgroundColor: '#EEF2FF', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: '#C7D2FE' },
+  welcomeBadge: { backgroundColor: '#EEF2FF', borderRadius: 12, paddingHorizontal: 8, paddingVertical: 5, borderWidth: 1, borderColor: '#C7D2FE', flexDirection: 'row', alignItems: 'center', gap: 4 },
   welcomeBadgeText: { color: '#4F46E5', fontSize: 10, fontWeight: '800', letterSpacing: 0.5 },
   focusRow: { borderTopColor: '#F1F5F9', borderTopWidth: 1, flexDirection: 'row', marginTop: 16, paddingTop: 14 },
   focusItem: { flex: 1 },
-  focusIcon: { fontSize: 16, marginBottom: 5, color: '#4F46E5' },
+  focusIconWrap: { marginBottom: 5 },
   focusValue: { color: '#0F172A', fontSize: 13.5, fontWeight: '700' },
   focusLabel: { color: '#64748B', fontSize: 10.5, marginTop: 3, fontWeight: '500' },
   primaryButton: { alignItems: 'center', backgroundColor: '#4F46E5', borderRadius: 17, flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, paddingBottom: 14, paddingLeft: 20, paddingRight: 12, paddingTop: 14, shadowColor: '#4F46E5', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 4 },

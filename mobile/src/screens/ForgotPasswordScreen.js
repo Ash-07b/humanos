@@ -11,6 +11,8 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ArrowLeft, Mail, Lightbulb } from 'lucide-react-native';
+import Logo from '../components/Logo';
 
 export default function ForgotPasswordScreen({ onBack }) {
   const { width, height } = useWindowDimensions();
@@ -41,14 +43,11 @@ export default function ForgotPasswordScreen({ onBack }) {
             onPress={onBack}
             style={({ pressed }) => [styles.backButton, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
           >
-            <Text style={styles.backArrow}>←</Text>
+            <ArrowLeft size={18} color="#818CF8" strokeWidth={2.4} />
             <Text style={styles.backText}>Back to Sign In</Text>
           </Pressable>
 
-          <View style={styles.brandMark}>
-            <View style={styles.brandDot} />
-            <View style={[styles.brandDot, styles.brandDotOffset]} />
-          </View>
+          <Logo size={32} showText={false} />
         </View>
 
         <View style={styles.heroContent}>
@@ -115,7 +114,7 @@ export default function ForgotPasswordScreen({ onBack }) {
           /* — Success State — */
           <View style={styles.formContainer}>
             <View style={styles.successBadge}>
-              <Text style={styles.successEmoji}>✉️</Text>
+              <Mail size={28} color="#4F46E5" strokeWidth={2} />
             </View>
 
             <View style={styles.textBlockCentered}>
@@ -127,7 +126,7 @@ export default function ForgotPasswordScreen({ onBack }) {
             </View>
 
             <View style={styles.infoCard}>
-              <Text style={styles.infoIcon}>💡</Text>
+              <Lightbulb size={16} color="#4338CA" strokeWidth={2.2} style={{ marginTop: 2 }} />
               <Text style={styles.infoText}>
                 Didn't receive it? Check your spam folder or try a different email.
               </Text>

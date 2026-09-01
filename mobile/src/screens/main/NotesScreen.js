@@ -13,12 +13,22 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  FileText,
+  Search,
+  Plus,
+  Check,
+  X,
+  Pin,
+} from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
+import { useTheme } from '../../contexts/ThemeContext';
 
 export default function NotesScreen({ user, onLogout, onNavigateTab, navigation }) {
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktop = isWeb && width >= 768;
+  const { theme, isDarkMode } = useTheme();
 
   const [activeTab, setActiveTab] = useState('notes');
   const [refreshing, setRefreshing] = useState(false);
@@ -95,24 +105,25 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
 
   const filteredNotes = notes.filter((n) => {
     const matchesTag = selectedTag === 'All' || n.tag === selectedTag;
-    const matchesSearch =
-      !searchQuery.trim() ||
-      n.title.toLowerCase().includes(searchQuery.toLowerCase().trim()) ||
-      n.body.toLowerCase().includes(searchQuery.toLowerCase().trim());
+    const title = (n?.title || '').toLowerCase();
+    const body = (n?.body || n?.content || '').toLowerCase();
+    const q = searchQuery ? searchQuery.toLowerCase().trim() : '';
+    const matchesSearch = !q || title.includes(q) || body.includes(q);
     return matchesTag && matchesSearch;
   });
 
   const appContent = (
-    <View style={styles.mainWrapper}>
+    <View style={[styles.mainWrapper, { backgroundColor: theme.colors.pageBg }]}>
       {!!noticeMessage && (
         <View style={styles.noticeToast}>
-          <Text style={styles.noticeText}>✓ {noticeMessage}</Text>
+          <Check size={14} color="#FFFFFF" strokeWidth={3} />
+          <Text style={styles.noticeText}>{noticeMessage}</Text>
         </View>
       )}
 
       <ScrollView
-        style={styles.scrollContainer}
-        contentContainerStyle={styles.scrollContentContainer}
+        style={[styles.scrollContainer, { backgroundColor: theme.colors.appBg }]}
+        contentContainerStyle={[styles.scrollContentContainer, { backgroundColor: theme.colors.pageBg }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -139,23 +150,24 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
                 pressed && styles.pressedOpacity,
               ]}
             >
-              <Text style={styles.quickAddBtnText}>+ Note</Text>
+              <Plus size={13} color="#FFFFFF" strokeWidth={2.5} />
+              <Text style={styles.quickAddBtnText}>Note</Text>
             </Pressable>
           </View>
 
           {/* Search Box */}
-          <View style={styles.searchBarContainer}>
-            <Text style={styles.searchIcon}>🔍</Text>
+          <View style={[styles.searchBarContainer, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF', borderColor: isDarkMode ? '#334155' : '#E2E8F0' }]}>
+            <Search size={15} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
             <TextInput
-              style={[styles.searchInput, isWeb && styles.webOutlineNone]}
+              style={[styles.searchInput, { color: isDarkMode ? '#F8FAFC' : '#0F172A' }, isWeb && styles.webOutlineNone]}
               placeholder="Search notes or ideas..."
               placeholderTextColor="#94A3B8"
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
             {!!searchQuery && (
-              <Pressable onPress={() => setSearchQuery('')}>
-                <Text style={styles.clearSearch}>✕</Text>
+              <Pressable onPress={() => setSearchQuery('')} hitSlop={6} style={{ padding: 4 }}>
+                <X size={14} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
               </Pressable>
             )}
           </View>
@@ -166,16 +178,28 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
         </View>
 
         {/* Content Body */}
-        <View style={styles.sheetContent}>
+        <View style={[styles.sheetContent, { backgroundColor: theme.colors.pageBg }]}>
           {/* Tag Filter Pills */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScroll}>
             {tags.map((t) => (
               <Pressable
                 key={t}
                 onPress={() => setSelectedTag(t)}
-                style={[styles.tagPill, selectedTag === t && styles.tagPillActive]}
+                style={[
+                  styles.tagPill,
+                  selectedTag === t
+                    ? styles.tagPillActive
+                    : [styles.tagPillInactive, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }],
+                ]}
               >
-                <Text style={[styles.tagPillText, selectedTag === t && styles.tagPillTextActive]}>
+                <Text
+                  style={[
+                    styles.tagPillText,
+                    selectedTag === t
+                      ? styles.tagPillTextActive
+                      : [styles.tagPillTextInactive, { color: theme.colors.textSecondary }],
+                  ]}
+                >
                   {t}
                 </Text>
               </Pressable>
@@ -184,31 +208,34 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
 
           {/* Notes Grid */}
           {filteredNotes.length === 0 ? (
-            <View style={{ alignItems: 'center', paddingVertical: 36, gap: 6 }}>
-              <Text style={{ fontSize: 30 }}>📝</Text>
-              <Text style={{ color: '#0F172A', fontSize: 14, fontWeight: '700' }}>No notes captured yet</Text>
-              <Text style={{ color: '#64748B', fontSize: 12, textAlign: 'center' }}>
+            <View style={{ alignItems: 'center', paddingVertical: 36, gap: 8 }}>
+              <FileText size={36} color="#94A3B8" strokeWidth={1.5} />
+              <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '700' }}>No notes captured yet</Text>
+              <Text style={{ color: theme.colors.textSecondary, fontSize: 12, textAlign: 'center' }}>
                 Tap "+ Note" above to capture thoughts, ideas, or architectural blueprints.
               </Text>
             </View>
           ) : (
             <View style={styles.notesList}>
               {filteredNotes.map((note) => (
-                <View key={note.id} style={styles.noteCard}>
+                <View key={note.id} style={[styles.noteCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
                   <View style={styles.noteHeaderRow}>
                     <View style={styles.noteTagBadge}>
                       <Text style={styles.noteTagText}>{note.tag}</Text>
                     </View>
                     <Pressable onPress={() => togglePin(note.id)} hitSlop={8}>
-                      <Text style={[styles.pinIcon, note.pinned && styles.pinIconActive]}>
-                        {note.pinned ? '📌' : '📍'}
-                      </Text>
+                      <Pin
+                        size={15}
+                        color={note.pinned ? '#4F46E5' : '#94A3B8'}
+                        fill={note.pinned ? '#4F46E5' : 'none'}
+                        strokeWidth={2}
+                      />
                     </Pressable>
                   </View>
 
-                  <Text style={styles.noteTitle}>{note.title}</Text>
-                  <Text style={styles.noteBody} numberOfLines={3}>{note.body}</Text>
-                  <Text style={styles.noteFooter}>{note.updatedAt}</Text>
+                  <Text style={[styles.noteTitle, { color: theme.colors.textPrimary }]}>{note.title}</Text>
+                  <Text style={[styles.noteBody, { color: theme.colors.textSecondary }]} numberOfLines={3}>{note.body}</Text>
+                  <Text style={[styles.noteFooter, { color: theme.colors.textMuted }]}>{note.updatedAt}</Text>
                 </View>
               ))}
             </View>
@@ -230,7 +257,7 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Quick Capture Note</Text>
               <Pressable onPress={() => setCreateModalVisible(false)}>
-                <Text style={styles.modalClose}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
@@ -277,11 +304,13 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A0E1A" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.appBg }]} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle={theme.colors.statusBarStyle} backgroundColor={theme.colors.appBg} />
       {isDesktop ? (
-        <View style={styles.desktopOuterContainer}>
-          <View style={styles.desktopShell}>{appContent}</View>
+        <View style={[styles.desktopOuterContainer, { backgroundColor: theme.colors.desktopBg }]}>
+          <View style={[styles.desktopShell, { backgroundColor: theme.colors.appBg, borderColor: theme.colors.borderDark }]}>
+            {appContent}
+          </View>
         </View>
       ) : (
         appContent
@@ -328,6 +357,9 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#F8FAFC', fontSize: 32, fontWeight: '800', letterSpacing: -1 },
   headerSubtitle: { color: '#94A3B8', fontSize: 13, marginTop: 4 },
   quickAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#4F46E5',
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -338,6 +370,7 @@ const styles = StyleSheet.create({
   searchBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 8,
     backgroundColor: '#1E293B',
     borderRadius: 14,
     paddingHorizontal: 12,
@@ -347,7 +380,7 @@ const styles = StyleSheet.create({
     zIndex: 2,
     height: 44,
   },
-  searchIcon: { fontSize: 14, marginRight: 8 },
+  searchIcon: { fontSize: 14 },
   searchInput: { flex: 1, color: '#F8FAFC', fontSize: 13.5 },
   clearSearch: { color: '#94A3B8', fontSize: 13, fontWeight: '700' },
 
@@ -443,6 +476,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 14,
     alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: '#1E1B4B',
     borderWidth: 1,
     borderColor: '#6366F1',

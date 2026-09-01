@@ -8,9 +8,29 @@ import {
   View,
   ScrollView,
   Platform,
+  Modal,
+  Image,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import {
+  ArrowLeft,
+  Camera,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  EyeOff,
+  Check,
+  Calendar,
+  Upload,
+  X,
+} from 'lucide-react-native';
+import { registerUser, loginUser } from '../services/api';
+import { saveToken, saveUser } from '../services/storage';
+import Logo from '../components/Logo';
+import DatePickerModal from '../components/DatePickerModal';
 
 const GoogleIcon = () => (
   <View style={styles.googleIconCircle}>
@@ -39,12 +59,141 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [agreeTerms, setAgreeTerms] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+
+  // Modals & Pickers
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+  const [photoPickerVisible, setPhotoPickerVisible] = useState(false);
+  const [customImageUrl, setCustomImageUrl] = useState('');
+
+  const avatarOptions = ['🌱', '🌿', '✨', '☀️', '🌸', '🦊', '🦉', '👑', '⚡', '🧠'];
+
+  const isCustomImage = (val) => {
+    return (
+      typeof val === 'string' &&
+      (val.startsWith('http://') ||
+        val.startsWith('https://') ||
+        val.startsWith('data:') ||
+        val.startsWith('file:') ||
+        val.startsWith('blob:') ||
+        val.startsWith('ph://'))
+    );
+  };
+
+  const pickImageFromGallery = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted && permission.status !== 'granted') {
+        setErrorMessage('Gallery access is required to pick an image.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+      if (!result.canceled && result.assets && result.assets[0]?.uri) {
+        setProfilePic(result.assets[0].uri);
+        setPhotoPickerVisible(false);
+        if (errorMessage) setErrorMessage('');
+      }
+    } catch (err) {
+      console.log('Image picker error:', err);
+    }
+  };
+
+  const takePhotoWithCamera = async () => {
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted && permission.status !== 'granted') {
+        setErrorMessage('Camera access is required to take a photo.');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+      if (!result.canceled && result.assets && result.assets[0]?.uri) {
+        setProfilePic(result.assets[0].uri);
+        setPhotoPickerVisible(false);
+        if (errorMessage) setErrorMessage('');
+      }
+    } catch (err) {
+      console.log('Camera error:', err);
+    }
+  };
+
+  const handleApplyCustomUrl = () => {
+    if (!customImageUrl.trim()) return;
+    setProfilePic(customImageUrl.trim());
+    setCustomImageUrl('');
+    setPhotoPickerVisible(false);
+    if (errorMessage) setErrorMessage('');
+  };
 
   const genderOptions = ['Female', 'Male', 'Non-binary', 'Prefer not to say'];
 
-  const handleRegister = () => {
-    if (onRegisterSuccess) {
-      onRegisterSuccess({ fullName, email, phoneNumber, dob, gender, profilePic, password });
+  const handleRegister = async () => {
+    setErrorMessage('');
+
+    if (!agreeTerms) {
+      setErrorMessage('Please accept the Terms of Service and Privacy Policy to continue.');
+      return;
+    }
+
+    if (!fullName.trim() || !email.trim() || !password) {
+      setErrorMessage('Please fill in your full name, email address, and password.');
+      return;
+    }
+
+    if (password.length < 8) {
+      setErrorMessage('Password must be at least 8 characters long.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const regResponse = await registerUser({
+        fullName,
+        email,
+        phoneNumber,
+        dob,
+        gender,
+        profilePic,
+        password,
+      });
+
+      if (!regResponse.success) {
+        setErrorMessage(regResponse.message || 'Registration failed. Please try again.');
+        setLoading(false);
+        return;
+      }
+
+      // Automatically log in newly registered CLIENT user to obtain JWT token & session
+      const loginRes = await loginUser(email, password);
+
+      if (loginRes.success && loginRes.token) {
+        await saveToken(loginRes.token);
+        if (loginRes.user) {
+          await saveUser(loginRes.user);
+        }
+        setLoading(false);
+        if (onRegisterSuccess) {
+          onRegisterSuccess(loginRes.user, loginRes.token);
+        }
+      } else {
+        // Fallback with registered user object
+        setLoading(false);
+        if (onRegisterSuccess) {
+          onRegisterSuccess(regResponse.user);
+        }
+      }
+    } catch (err) {
+      setErrorMessage(err.message || 'An unexpected error occurred during registration.');
+      setLoading(false);
     }
   };
 
@@ -63,14 +212,11 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
             onPress={onBack}
             style={({ pressed }) => [styles.backButton, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
           >
-            <Text style={styles.backArrow}>←</Text>
+            <ArrowLeft size={18} color="#818CF8" strokeWidth={2.4} />
             <Text style={styles.backText}>Back</Text>
           </Pressable>
 
-          <View style={styles.brandMark}>
-            <View style={styles.brandDot} />
-            <View style={[styles.brandDot, styles.brandDotOffset]} />
-          </View>
+          <Logo size={32} showText={false} />
         </View>
 
         <View style={styles.heroContent}>
@@ -94,22 +240,29 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
         <View style={styles.handle} />
 
         <View style={styles.formContainer}>
+          {/* Error Message Display */}
+          {!!errorMessage && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          )}
+
           {/* Centered Avatar Picker */}
           <View style={styles.centeredAvatarContainer}>
             <Pressable
-              onPress={() => {
-                const avatars = ['🌱', '🌿', '✨', '☀️', '🌸', '🦊', '🦉'];
-                const currentIndex = avatars.indexOf(profilePic);
-                const nextIndex = (currentIndex + 1) % avatars.length;
-                setProfilePic(avatars[nextIndex]);
-              }}
+              onPress={() => setPhotoPickerVisible(true)}
               style={({ pressed }) => [styles.avatarPicker, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <Text style={styles.avatarEmoji}>{profilePic}</Text>
+              {isCustomImage(profilePic) ? (
+                <Image source={{ uri: profilePic }} style={styles.avatarCustomImg} resizeMode="cover" />
+              ) : (
+                <Text style={styles.avatarEmoji}>{profilePic}</Text>
+              )}
               <View style={styles.cameraBadge}>
-                <Text style={styles.cameraIcon}>+</Text>
+                <Camera size={11} color="#FFFFFF" strokeWidth={2.5} />
               </View>
             </Pressable>
+            <Text style={styles.avatarPickerHint}>Tap to choose photo or avatar</Text>
           </View>
 
           {/* Full Name & Email (Grid Row 1) */}
@@ -122,7 +275,10 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
                   placeholder="Ash Morgan"
                   placeholderTextColor="#94A3B8"
                   value={fullName}
-                  onChangeText={setFullName}
+                  onChangeText={(text) => {
+                    setFullName(text);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   autoCapitalize="words"
                   autoCorrect={false}
                 />
@@ -137,7 +293,10 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
                   placeholder="name@example.com"
                   placeholderTextColor="#94A3B8"
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(text) => {
+                    setEmail(text);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   keyboardType="email-address"
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -156,7 +315,10 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
                   placeholder="+1 (555) 000-0000"
                   placeholderTextColor="#94A3B8"
                   value={phoneNumber}
-                  onChangeText={setPhoneNumber}
+                  onChangeText={(text) => {
+                    setPhoneNumber(text);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   keyboardType="phone-pad"
                 />
               </View>
@@ -164,14 +326,27 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
 
             <View style={[styles.inputGroup, styles.gridCol]}>
               <Text style={styles.inputLabel}>Date of Birth</Text>
-              <View style={styles.inputWrapper}>
+              <View style={styles.inputWrapperWithCalendar}>
                 <TextInput
-                  style={[styles.input, isWeb && styles.webOutlineNone]}
+                  style={[styles.input, styles.inputFlex, isWeb && styles.webOutlineNone]}
                   placeholder="DD/MM/YYYY"
                   placeholderTextColor="#94A3B8"
                   value={dob}
-                  onChangeText={setDob}
+                  onChangeText={(text) => {
+                    setDob(text);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                 />
+                <Pressable
+                  onPress={() => setDatePickerVisible(true)}
+                  style={({ pressed }) => [
+                    styles.calendarIconBtn,
+                    isWeb && styles.webPointer,
+                    pressed && styles.pressedOpacity,
+                  ]}
+                >
+                  <Calendar size={17} color="#6366F1" strokeWidth={2.2} />
+                </Pressable>
               </View>
             </View>
           </View>
@@ -198,7 +373,11 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
                 >
                   {gender}
                 </Text>
-                <Text style={styles.chevronIcon}>{showGenderDropdown ? '▲' : '▼'}</Text>
+                {showGenderDropdown ? (
+                  <ChevronUp size={14} color="#64748B" strokeWidth={2.4} />
+                ) : (
+                  <ChevronDown size={14} color="#64748B" strokeWidth={2.4} />
+                )}
               </Pressable>
 
               {/* Absolute Dropdown Floating Box */}
@@ -241,7 +420,10 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
                   placeholder="Password"
                   placeholderTextColor="#94A3B8"
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(text) => {
+                    setPassword(text);
+                    if (errorMessage) setErrorMessage('');
+                  }}
                   secureTextEntry={!showPassword}
                   autoCapitalize="none"
                 />
@@ -249,7 +431,11 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
                   onPress={() => setShowPassword(!showPassword)}
                   style={({ pressed }) => [styles.eyeButton, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
                 >
-                  <Text style={styles.eyeIcon}>{showPassword ? '🙈' : '👁'}</Text>
+                  {showPassword ? (
+                    <EyeOff size={18} color="#94A3B8" strokeWidth={2} />
+                  ) : (
+                    <Eye size={18} color="#94A3B8" strokeWidth={2} />
+                  )}
                 </Pressable>
               </View>
             </View>
@@ -262,7 +448,7 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
               style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
               <View style={[styles.checkbox, agreeTerms && styles.checkboxActive]}>
-                {agreeTerms && <Text style={styles.checkmark}>✓</Text>}
+                {agreeTerms && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
               </View>
             </Pressable>
             <Text style={styles.termsText}>
@@ -274,9 +460,19 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
           {/* Primary Create Account Button */}
           <Pressable
             onPress={handleRegister}
-            style={({ pressed }) => [styles.primaryButton, isWeb && styles.webPointer, pressed && styles.buttonPressed]}
+            disabled={loading}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              loading && styles.buttonDisabled,
+              isWeb && styles.webPointer,
+              pressed && !loading && styles.buttonPressed,
+            ]}
           >
-            <Text style={styles.primaryButtonText}>Create Account</Text>
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Create Account</Text>
+            )}
           </Pressable>
 
           {/* Footer Sign In Link */}
@@ -291,6 +487,143 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
           </View>
         </View>
       </View>
+
+      {/* CHANGE PHOTO MODAL */}
+      <Modal
+        visible={photoPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPhotoPickerVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.photoPickerCard}>
+            <View style={styles.photoPickerHeader}>
+              <Text style={styles.photoPickerTitle}>Profile Picture</Text>
+              <Pressable
+                onPress={() => setPhotoPickerVisible(false)}
+                style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              >
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
+              </Pressable>
+            </View>
+            <Text style={styles.photoPickerSubtitle}>Upload your own photo or choose an avatar</Text>
+
+            {/* Current Avatar Preview */}
+            <View style={styles.photoPickerPreviewContainer}>
+              <View style={styles.photoPickerPreviewCircle}>
+                {isCustomImage(profilePic) ? (
+                  <Image source={{ uri: profilePic }} style={styles.avatarCustomImg} resizeMode="cover" />
+                ) : (
+                  <Text style={styles.avatarEmojiLarge}>{profilePic}</Text>
+                )}
+              </View>
+            </View>
+
+            {/* Custom Photo Upload Action Buttons */}
+            <View style={styles.photoUploadActionsRow}>
+              <Pressable
+                onPress={pickImageFromGallery}
+                style={({ pressed }) => [
+                  styles.uploadOptionBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Upload size={15} color="#FFFFFF" strokeWidth={2.4} />
+                <Text style={styles.uploadOptionBtnText}>Upload Photo</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={takePhotoWithCamera}
+                style={({ pressed }) => [
+                  styles.cameraOptionBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Camera size={15} color="#4F46E5" strokeWidth={2.4} />
+                <Text style={styles.cameraOptionBtnText}>Take Photo</Text>
+              </Pressable>
+            </View>
+
+            {/* Image URL Input */}
+            <View style={styles.customUrlContainer}>
+              <Text style={styles.customUrlLabel}>Or paste image URL:</Text>
+              <View style={styles.customUrlInputRow}>
+                <TextInput
+                  style={[styles.customUrlInput, isWeb && styles.webOutlineNone]}
+                  value={customImageUrl}
+                  onChangeText={setCustomImageUrl}
+                  placeholder="https://example.com/photo.jpg"
+                  placeholderTextColor="#94A3B8"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Pressable
+                  onPress={handleApplyCustomUrl}
+                  style={({ pressed }) => [
+                    styles.customUrlApplyBtn,
+                    isWeb && styles.webPointer,
+                    pressed && styles.pressedOpacity,
+                  ]}
+                >
+                  <Text style={styles.customUrlApplyText}>Apply</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Preset Avatars Divider & Grid */}
+            <View style={styles.avatarSectionDivider}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerLabel}>Or choose preset avatar</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <View style={styles.avatarGrid}>
+              {avatarOptions.map((item) => (
+                <Pressable
+                  key={item}
+                  onPress={() => {
+                    setProfilePic(item);
+                    setPhotoPickerVisible(false);
+                  }}
+                  style={({ pressed }) => [
+                    styles.avatarOptionItem,
+                    profilePic === item && styles.avatarOptionItemActive,
+                    isWeb && styles.webPointer,
+                    pressed && styles.pressedOpacity,
+                  ]}
+                >
+                  <Text style={styles.avatarOptionEmoji}>{item}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Pressable
+              onPress={() => setPhotoPickerVisible(false)}
+              style={({ pressed }) => [
+                styles.photoPickerCloseBtn,
+                isWeb && styles.webPointer,
+                pressed && styles.pressedOpacity,
+              ]}
+            >
+              <Text style={styles.photoPickerCloseText}>Done</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
+
+      {/* DATE PICKER MODAL */}
+      <DatePickerModal
+        visible={datePickerVisible}
+        onClose={() => setDatePickerVisible(false)}
+        onSelectDate={(dateStr) => {
+          setDob(dateStr);
+          if (errorMessage) setErrorMessage('');
+        }}
+        initialDate={dob}
+        title="Select Date of Birth"
+      />
     </ScrollView>
   );
 
@@ -418,6 +751,233 @@ const styles = StyleSheet.create({
     borderColor: '#FFFFFF',
   },
   cameraIcon: { color: '#FFFFFF', fontSize: 11, fontWeight: '900', marginTop: -1 },
+  avatarPickerHint: {
+    color: '#64748B',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  avatarCustomImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 31,
+  },
+  inputWrapperWithCalendar: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    paddingLeft: 12,
+    paddingRight: 6,
+    height: 46,
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+  },
+  inputFlex: {
+    flex: 1,
+  },
+  calendarIconBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 9999,
+  },
+  photoPickerCard: {
+    width: '100%',
+    maxWidth: 380,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+    alignItems: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  photoPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 4,
+  },
+  photoPickerTitle: {
+    color: '#0F172A',
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  photoPickerSubtitle: {
+    color: '#64748B',
+    fontSize: 12,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  photoPickerPreviewContainer: {
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  photoPickerPreviewCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#818CF8',
+    overflow: 'hidden',
+  },
+  avatarEmojiLarge: {
+    fontSize: 30,
+  },
+  photoUploadActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+    marginBottom: 12,
+  },
+  uploadOptionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#4F46E5',
+    paddingVertical: 11,
+    borderRadius: 12,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  uploadOptionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  cameraOptionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#EEF2FF',
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  cameraOptionBtnText: {
+    color: '#4F46E5',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  customUrlContainer: {
+    width: '100%',
+    marginBottom: 12,
+  },
+  customUrlLabel: {
+    color: '#64748B',
+    fontSize: 11.5,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  customUrlInputRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  customUrlInput: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+    color: '#0F172A',
+  },
+  customUrlApplyBtn: {
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customUrlApplyText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  avatarSectionDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: 8,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  dividerLabel: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '600',
+    marginHorizontal: 8,
+  },
+  avatarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 14,
+  },
+  avatarOptionItem: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarOptionItemActive: {
+    borderColor: '#4F46E5',
+    backgroundColor: '#EEF2FF',
+  },
+  avatarOptionEmoji: {
+    fontSize: 20,
+  },
+  photoPickerCloseBtn: {
+    backgroundColor: '#F1F5F9',
+    width: '100%',
+    paddingVertical: 11,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoPickerCloseText: {
+    color: '#475569',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   gridRow: {
     flexDirection: 'row',
     gap: 10,
@@ -533,7 +1093,23 @@ const styles = StyleSheet.create({
   footerText: { color: '#64748B', fontSize: 12 },
   signInLink: { color: '#4F46E5', fontSize: 12, fontWeight: '700' },
   buttonPressed: { opacity: 0.88, transform: [{ scale: 0.985 }] },
+  buttonDisabled: { opacity: 0.7 },
   pressedOpacity: { opacity: 0.6 },
   webPointer: Platform.OS === 'web' ? { cursor: 'pointer' } : {},
   webOutlineNone: Platform.OS === 'web' ? { outlineStyle: 'none' } : {},
+  errorContainer: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 4,
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 12,
+    fontWeight: '600',
+    lineHeight: 16,
+  },
 });

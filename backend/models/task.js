@@ -18,34 +18,62 @@ const taskSchema = new mongoose.Schema(
       trim: true,
       default: '',
     },
+    category: {
+      type: String,
+      trim: true,
+      default: 'Work',
+    },
     priority: {
       type: String,
       enum: {
-        values: ['LOW', 'MEDIUM', 'HIGH', 'URGENT'],
+        values: ['LOW', 'MEDIUM', 'HIGH', 'URGENT', 'Low', 'Medium', 'High', 'Urgent'],
         message: '{VALUE} is not a valid priority',
       },
       default: 'MEDIUM',
-      uppercase: true,
     },
     status: {
       type: String,
       enum: {
-        values: ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'],
+        values: ['PENDING', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'Pending', 'In Progress', 'Completed', 'Cancelled'],
         message: '{VALUE} is not a valid task status',
       },
       default: 'PENDING',
-      uppercase: true,
     },
     dueDate: {
-      type: Date,
+      type: String,
+      default: 'Today',
+    },
+    dueTime: {
+      type: String,
+      default: '10:00 AM',
     },
     reminder: {
       type: Boolean,
       default: false,
     },
+    completedAt: {
+      type: String,
+      default: null,
+    },
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        ret.done = ret.status === 'COMPLETED' || ret.status === 'Completed';
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        ret.done = ret.status === 'COMPLETED' || ret.status === 'Completed';
+        return ret;
+      },
+    },
   }
 );
 

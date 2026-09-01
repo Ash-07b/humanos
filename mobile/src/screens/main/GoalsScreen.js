@@ -13,12 +13,37 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Briefcase,
+  GraduationCap,
+  WalletCards,
+  HeartPulse,
+  UserRound,
+  Target,
+  Search,
+  X,
+  Plus,
+  Check,
+  Flame,
+  MoreVertical,
+  Calendar,
+  Sparkles,
+  Eye,
+  TrendingUp,
+  Flag,
+  Archive,
+  Trash2,
+} from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
+import { useTheme } from '../../contexts/ThemeContext';
+import { fetchAiGoalRecommendation } from '../../services/api';
+import { getToken } from '../../services/storage';
 
 export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation }) {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 768;
   const isWeb = Platform.OS === 'web';
+  const { theme, isDarkMode } = useTheme();
 
   const [activeTab, setActiveTab] = useState('goals');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -48,10 +73,15 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
   const [newGoalPriority, setNewGoalPriority] = useState('Medium');
   const [formError, setFormError] = useState('');
 
-  // Goals Data (dynamically bound to database user)
   const [goals, setGoals] = useState(user?.goals || []);
   const [completedGoals, setCompletedGoals] = useState(user?.completedGoals || []);
   const supportingHabits = user?.habits || [];
+
+  // Live AI Goal Review State
+  const [aiReviewText, setAiReviewText] = useState(
+    user?.aiGoalReview || "You're making steady progress on your goals. Your strongest area this week is Learning."
+  );
+  const [aiReviewLoading, setAiReviewLoading] = useState(false);
 
   // Sync state whenever user data changes from database
   React.useEffect(() => {
@@ -84,6 +114,43 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
     }, 600);
   };
 
+  const handleGenerateAiReview = async () => {
+    setAiReviewLoading(true);
+    try {
+      const activeGoalsData = goals.map((g) => ({
+        title: g.title,
+        progress: g.progress || 0,
+        category: g.category || 'General',
+      }));
+
+      const payload = {
+        totalGoals: goals.length,
+        completedGoals: completedGoals.length,
+        activeGoals: activeGoalsData,
+        currentProgress: overallProgress,
+        categories: [...new Set(goals.map((g) => g.category || 'General'))],
+      };
+
+      const token = await getToken();
+      const res = await fetchAiGoalRecommendation(payload, token);
+
+      if (res && res.success && res.recommendation) {
+        setAiReviewText(res.recommendation);
+        showToast(res.source && res.source.startsWith('ollama') ? 'Goal Strategy reviewed by Ollama' : 'Goal Strategy synthesized');
+      } else {
+        throw new Error(res?.message || 'Empty response');
+      }
+    } catch (err) {
+      console.log('AI Goal fallback review:', err.message);
+      setAiReviewText(
+        `Maintaining steady momentum with ${overallProgress}% overall goal progress. Focus on advancing your primary milestone today.`
+      );
+      showToast('AI goal review updated');
+    } finally {
+      setAiReviewLoading(false);
+    }
+  };
+
   const handleTabChange = (tabId) => {
     setActiveTab(tabId);
     if (onNavigateTab) {
@@ -100,7 +167,11 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
   // Calculations
   const totalGoalsCount = goals.length + completedGoals.length;
   const completedCount = completedGoals.length;
-  const currentStreak = 12;
+  const currentStreak =
+    user?.activeStreak ??
+    (supportingHabits.length
+      ? Math.max(...supportingHabits.map((h) => h.streak || 0), 0)
+      : 0);
 
   const totalProgressSum =
     goals.reduce((acc, g) => acc + g.progress, 0) + completedGoals.length * 100;
@@ -108,11 +179,13 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
 
   // Filtered Goals
   const filteredGoals = goals.filter((g) => {
-    const matchesCat = selectedCategory === 'All' || g.category.toLowerCase() === selectedCategory.toLowerCase();
-    const matchesSearch =
-      !searchQuery.trim() ||
-      g.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      g.description?.toLowerCase().includes(searchQuery.toLowerCase());
+    const title = g?.title ? String(g.title).toLowerCase() : '';
+    const desc = g?.description ? String(g.description).toLowerCase() : '';
+    const cat = g?.category ? String(g.category).toLowerCase() : '';
+    const q = searchQuery ? searchQuery.toLowerCase().trim() : '';
+
+    const matchesCat = selectedCategory === 'All' || cat === selectedCategory.toLowerCase();
+    const matchesSearch = !q || title.includes(q) || desc.includes(q) || cat.includes(q);
     return matchesCat && matchesSearch;
   });
 
@@ -283,35 +356,36 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
     }
   };
 
-  const getCategoryIcon = (category) => {
+  const getCategoryIconComponent = (category) => {
     switch (category?.toLowerCase()) {
       case 'career':
-        return '💼';
+        return Briefcase;
       case 'learning':
-        return '📚';
+        return GraduationCap;
       case 'finance':
-        return '💰';
+        return WalletCards;
       case 'health':
-        return '♥';
+        return HeartPulse;
       case 'personal':
-        return '🌱';
+        return UserRound;
       default:
-        return '🎯';
+        return Target;
     }
   };
 
   const appContent = (
-    <View style={styles.mainWrapper}>
+    <View style={[styles.mainWrapper, { backgroundColor: theme.colors.pageBg }]}>
       {/* Toast Notice */}
       {!!toastMessage && (
         <View style={styles.toastNotice}>
-          <Text style={styles.toastText}>✓ {toastMessage}</Text>
+          <Check size={14} color="#FFFFFF" strokeWidth={3} />
+          <Text style={styles.toastText}>{toastMessage}</Text>
         </View>
       )}
 
       <ScrollView
-        style={styles.scrollContainer}
-        contentContainerStyle={styles.scrollContentContainer}
+        style={[styles.scrollContainer, { backgroundColor: theme.colors.appBg }]}
+        contentContainerStyle={[styles.scrollContentContainer, { backgroundColor: theme.colors.pageBg }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -335,7 +409,10 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
 
             <View style={styles.headerActionBtnRow}>
               <Pressable
-                onPress={() => setShowSearch(!showSearch)}
+                onPress={() => {
+                  setShowSearch(!showSearch);
+                  if (showSearch) setSearchQuery('');
+                }}
                 style={({ pressed }) => [
                   styles.headerActionBtn,
                   showSearch && styles.headerActionBtnActive,
@@ -344,7 +421,11 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                 ]}
                 hitSlop={8}
               >
-                <Text style={styles.headerActionIcon}>🔍</Text>
+                {showSearch ? (
+                  <X size={18} color="#94A3B8" strokeWidth={2.2} />
+                ) : (
+                  <Search size={18} color="#94A3B8" strokeWidth={2.2} />
+                )}
               </Pressable>
 
               <Pressable
@@ -360,26 +441,27 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.headerAddBtnText}>+ Add</Text>
+                <Plus size={14} color="#FFFFFF" strokeWidth={2.5} />
+                <Text style={styles.headerAddBtnText}>Add Goal</Text>
               </Pressable>
             </View>
           </View>
 
           {/* Search Bar Input */}
           {showSearch && (
-            <View style={styles.searchBarContainer}>
-              <Text style={styles.searchIconLead}>🔍</Text>
+            <View style={[styles.searchBarContainer, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF', borderColor: isDarkMode ? '#334155' : '#E2E8F0' }]}>
+              <Search size={15} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
               <TextInput
-                style={[styles.searchInput, isWeb && styles.webOutlineNone]}
-                placeholder="Search goals by title..."
+                style={[styles.searchInput, { color: isDarkMode ? '#F8FAFC' : '#0F172A' }, isWeb && styles.webOutlineNone]}
+                placeholder="Search goals by title or description..."
                 placeholderTextColor="#94A3B8"
                 value={searchQuery}
                 onChangeText={setSearchQuery}
                 autoFocus
               />
               {!!searchQuery && (
-                <Pressable onPress={() => setSearchQuery('')} hitSlop={6}>
-                  <Text style={styles.searchClearBtn}>✕</Text>
+                <Pressable onPress={() => setSearchQuery('')} hitSlop={6} style={{ padding: 4 }}>
+                  <X size={14} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
                 </Pressable>
               )}
             </View>
@@ -390,50 +472,56 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
           <View style={styles.orbSmall} />
         </View>
 
-        {/* ==================== 2. MAIN SHEET ==================== */}
-        <View style={styles.sheetContent}>
-          {/* ==================== 2. GOAL OVERVIEW ==================== */}
-          <View style={styles.overviewCard}>
-            <View style={styles.overviewTopRow}>
+        {/* ==================== MAIN CONTENT SHEET ==================== */}
+        <View style={[styles.sheetContent, { backgroundColor: theme.colors.pageBg }]}>
+          {/* ==================== 2. OVERVIEW SUMMARY CARD ==================== */}
+          <View style={[styles.overviewCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            <View style={styles.overviewHeaderRow}>
               <View>
-                <Text style={styles.overviewKicker}>MACRO PROGRESSION</Text>
-                <Text style={styles.overviewTitle}>My Progress</Text>
+                <Text style={[styles.overviewKicker, { color: isDarkMode ? '#6EE7B7' : '#10B981' }]}>PROGRESS PULSE</Text>
+                <Text style={[styles.overviewTitle, { color: theme.colors.textPrimary }]}>Overall Goals Execution</Text>
               </View>
-              <View style={styles.progressBadge}>
-                <Text style={styles.progressBadgeText}>{overallProgress}%</Text>
+              <View style={[styles.progressBadge, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#ECFDF5', borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.4)' : '#A7F3D0' }]}>
+                <Text style={[styles.progressBadgeText, { color: isDarkMode ? '#6EE7B7' : '#059669' }]}>{overallProgress}%</Text>
               </View>
             </View>
 
-            {/* Horizontal Progress Bar */}
-            <View style={styles.progressBarTrack}>
+            {/* Single Main Horizontal Progress Bar (Lighter Modern Emerald/Mint Green) */}
+            <View style={[styles.progressBarTrack, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.18)' : '#ECFDF5' }]}>
               <View
                 style={[
                   styles.progressBarFill,
-                  { width: `${Math.max(6, Math.min(100, overallProgress))}%` },
+                  {
+                    width: `${Math.max(6, Math.min(100, overallProgress))}%`,
+                    backgroundColor: isDarkMode ? '#34D399' : '#10B981',
+                  },
                 ]}
               />
             </View>
 
             <View style={styles.overviewStatsRow}>
               <View style={styles.statBox}>
-                <Text style={styles.statValue}>
+                <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>
                   {completedCount} / {totalGoalsCount}
                 </Text>
-                <Text style={styles.statLabel}>Goals Completed</Text>
+                <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>Goals Completed</Text>
               </View>
 
-              <View style={styles.statDivider} />
+              <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
 
               <View style={styles.statBox}>
-                <Text style={styles.statValue}>🔥 {currentStreak} days</Text>
-                <Text style={styles.statLabel}>Current Streak</Text>
+                <View style={styles.streakValRow}>
+                  <Flame size={14} color="#F59E0B" strokeWidth={2.4} />
+                  <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{currentStreak} days</Text>
+                </View>
+                <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>Current Streak</Text>
               </View>
 
-              <View style={styles.statDivider} />
+              <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
 
               <View style={styles.statBox}>
-                <Text style={styles.statValue}>{goals.length} Active</Text>
-                <Text style={styles.statLabel}>In Motion</Text>
+                <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{goals.length} Active</Text>
+                <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>In Motion</Text>
               </View>
             </View>
           </View>
@@ -447,26 +535,34 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
             >
               {categories.map((cat) => {
                 const isSelected = selectedCategory === cat;
+                const IconComponent = cat !== 'All' ? getCategoryIconComponent(cat) : null;
                 return (
                   <Pressable
                     key={cat}
                     onPress={() => setSelectedCategory(cat)}
                     style={({ pressed }) => [
                       styles.categoryChip,
-                      isSelected ? styles.categoryChipSelected : styles.categoryChipUnselected,
+                      isSelected ? styles.categoryChipSelected : [styles.categoryChipUnselected, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }],
                       isWeb && styles.webPointer,
                       pressed && styles.pressedOpacity,
                     ]}
                   >
+                    {IconComponent && (
+                      <IconComponent
+                        size={13}
+                        color={isSelected ? '#FFFFFF' : (isDarkMode ? '#818CF8' : '#4F46E5')}
+                        strokeWidth={2.2}
+                      />
+                    )}
                     <Text
                       style={[
                         styles.categoryChipText,
                         isSelected
                           ? styles.categoryChipTextSelected
-                          : styles.categoryChipTextUnselected,
+                          : [styles.categoryChipTextUnselected, { color: theme.colors.textSecondary }],
                       ]}
                     >
-                      {cat !== 'All' ? `${getCategoryIcon(cat)} ` : ''}{cat}
+                      {cat}
                     </Text>
                   </Pressable>
                 );
@@ -478,18 +574,20 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={styles.sectionSub}>FOCUSED OBJECTIVES</Text>
-              <Text style={styles.sectionTitle}>Active Goals</Text>
+              <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Active Goals</Text>
             </View>
-            <Text style={styles.sectionCounterBadge}>{filteredGoals.length} goals</Text>
+            <Text style={[styles.sectionCounterBadge, { backgroundColor: theme.colors.cardAltBg, color: theme.colors.textSecondary }]}>
+              {filteredGoals.length} goals
+            </Text>
           </View>
 
           {filteredGoals.length === 0 ? (
-            <View style={styles.emptyStateCard}>
-              <Text style={styles.emptyStateEmoji}>🎯</Text>
-              <Text style={styles.emptyStateHeading}>
+            <View style={[styles.emptyStateCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+              <Target size={36} color="#94A3B8" strokeWidth={1.5} />
+              <Text style={[styles.emptyStateHeading, { color: theme.colors.textPrimary }]}>
                 {selectedCategory === 'All' ? 'No goals yet' : 'No goals in this category'}
               </Text>
-              <Text style={styles.emptyStateSubtext}>
+              <Text style={[styles.emptyStateSubtext, { color: theme.colors.textSecondary }]}>
                 Start with something meaningful and track your progress along the way.
               </Text>
               <Pressable
@@ -502,11 +600,13 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                 }}
                 style={({ pressed }) => [
                   styles.emptyStateBtn,
+                  { backgroundColor: '#4F46E5', flexDirection: 'row', alignItems: 'center', gap: 6 },
                   isWeb && styles.webPointer,
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.emptyStateBtnText}>+ Create Goal</Text>
+                <Plus size={15} color="#FFFFFF" strokeWidth={2.6} />
+                <Text style={[styles.emptyStateBtnText, { color: '#FFFFFF', fontWeight: '800' }]}>Create Goal</Text>
               </Pressable>
             </View>
           ) : (
@@ -515,6 +615,7 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                 const pColor = getPriorityColor(goal.priority);
                 const completedMilestones = (goal.milestones || []).filter((m) => m.completed).length;
                 const totalMilestones = (goal.milestones || []).length;
+                const CatIcon = getCategoryIconComponent(goal.category);
 
                 return (
                   <Pressable
@@ -525,18 +626,18 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                     }}
                     style={({ pressed }) => [
                       styles.goalCard,
+                      { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
                       isWeb && styles.webPointer,
                       pressed && styles.cardPressed,
                     ]}
                   >
                     <View style={styles.goalCardTopRow}>
                       <View style={styles.goalTitleCol}>
-                        <Text style={styles.goalTitleText}>{goal.title}</Text>
+                        <Text style={[styles.goalTitleText, { color: theme.colors.textPrimary }]}>{goal.title}</Text>
                         <View style={styles.goalBadgesRow}>
-                          <View style={styles.categoryBadge}>
-                            <Text style={styles.categoryBadgeText}>
-                              {getCategoryIcon(goal.category)} {goal.category}
-                            </Text>
+                          <View style={[styles.categoryBadge, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                            <CatIcon size={11} color={isDarkMode ? '#818CF8' : '#4F46E5'} strokeWidth={2.2} />
+                            <Text style={[styles.categoryBadgeText, { color: theme.colors.textSecondary }]}>{goal.category}</Text>
                           </View>
 
                           <View
@@ -561,41 +662,32 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                         style={styles.optionsDotBtn}
                         hitSlop={8}
                       >
-                        <Text style={styles.optionsDotText}>⋮</Text>
+                        <MoreVertical size={16} color="#64748B" strokeWidth={2.2} />
                       </Pressable>
                     </View>
 
-                    {/* Progress Percentage & Track */}
+                    {/* Progress Summary Info Row (Without redundant second progress bar) */}
                     <View style={styles.goalProgressSection}>
                       <View style={styles.progressInfoRow}>
-                        <Text style={styles.progressPercentLabel}>
-                          {goal.progress}% completed
-                        </Text>
+                        <View style={[styles.goalProgressPill, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5' }]}>
+                          <Text style={[styles.progressPercentLabel, { color: isDarkMode ? '#34D399' : '#059669' }]}>
+                            {goal.progress}% Completed
+                          </Text>
+                        </View>
                         {totalMilestones > 0 && (
-                          <Text style={styles.milestoneMiniText}>
+                          <Text style={[styles.milestoneMiniText, { color: theme.colors.textSecondary }]}>
                             {completedMilestones}/{totalMilestones} milestones
                           </Text>
                         )}
                       </View>
-
-                      <View style={styles.goalProgressBarTrack}>
-                        <View
-                          style={[
-                            styles.goalProgressBarFill,
-                            {
-                              width: `${Math.max(5, Math.min(100, goal.progress))}%`,
-                              backgroundColor: goal.progress >= 75 ? '#059669' : '#4F46E5',
-                            },
-                          ]}
-                        />
-                      </View>
                     </View>
 
                     {/* Footer Info */}
-                    <View style={styles.goalCardFooter}>
-                      <Text style={styles.targetDateText}>
-                        🗓 Target: {goal.targetDate}
-                      </Text>
+                    <View style={[styles.goalCardFooter, { borderTopColor: theme.colors.border }]}>
+                      <View style={styles.targetDateRow}>
+                        <Calendar size={11} color="#64748B" strokeWidth={2.2} />
+                        <Text style={[styles.targetDateText, { color: theme.colors.textSecondary }]}>Target: {goal.targetDate}</Text>
+                      </View>
                       <Pressable
                         onPress={(e) => {
                           e.stopPropagation();
@@ -603,7 +695,7 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                           setNewProgressValue(goal.progress);
                           setEditProgressModalVisible(true);
                         }}
-                        style={styles.quickUpdateBtn}
+                        style={[styles.quickUpdateBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
                       >
                         <Text style={styles.quickUpdateText}>Update %</Text>
                       </Pressable>
@@ -615,26 +707,26 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
           )}
 
           {/* ==================== 10. HABITS CONNECTION ==================== */}
-          <View style={styles.sectionCard}>
+          <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.sectionHeaderRow}>
               <View>
                 <Text style={styles.sectionSub}>DAILY MOMENTUM</Text>
-                <Text style={styles.sectionTitle}>Supporting Habits</Text>
+                <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Supporting Habits</Text>
               </View>
             </View>
-            <Text style={styles.habitsExplainer}>
+            <Text style={[styles.habitsExplainer, { color: theme.colors.textSecondary }]}>
               Small habits help you reach your bigger goals.
             </Text>
 
             <View style={styles.habitsGrid}>
               {supportingHabits.map((habit) => (
-                <View key={habit.id} style={styles.habitCard}>
+                <View key={habit.id} style={[styles.habitCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
                   <View style={[styles.habitIconWrap, { backgroundColor: `${habit.color}18` }]}>
                     <Text style={styles.habitIcon}>{habit.icon}</Text>
                   </View>
                   <View style={styles.habitContent}>
-                    <Text style={styles.habitName}>{habit.name}</Text>
-                    <Text style={styles.habitFreq}>{habit.frequency}</Text>
+                    <Text style={[styles.habitName, { color: theme.colors.textPrimary }]}>{habit.name}</Text>
+                    <Text style={[styles.habitFreq, { color: theme.colors.textSecondary }]}>{habit.frequency}</Text>
                   </View>
                   <View style={styles.habitActiveDot} />
                 </View>
@@ -643,29 +735,42 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
           </View>
 
           {/* ==================== 11. GOAL INSIGHTS (AI CARD) ==================== */}
-          <View style={styles.insightCard}>
+          <View style={[styles.insightCard, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.15)' : '#F5F3FF', borderColor: theme.colors.border }]}>
             <View style={styles.insightHeaderRow}>
               <View style={styles.insightBadge}>
-                <Text style={styles.insightSparkle}>✨</Text>
+                <Sparkles size={13} color="#6366F1" strokeWidth={2.2} />
                 <Text style={styles.insightBadgeText}>INTELLIGENT REVIEW</Text>
               </View>
+              <Pressable
+                onPress={handleGenerateAiReview}
+                disabled={aiReviewLoading}
+                style={({ pressed }) => [
+                  styles.insightRefreshBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Text style={[styles.insightRefreshText, { color: isDarkMode ? '#A5B4FC' : '#4F46E5' }]}>
+                  {aiReviewLoading ? 'Analyzing...' : '✦ AI Review'}
+                </Text>
+              </Pressable>
             </View>
-            <Text style={styles.insightTitle}>Your Progress</Text>
-            <Text style={styles.insightBody}>
-              "You're making steady progress on your goals. Your strongest area this week is Learning."
+            <Text style={[styles.insightTitle, { color: theme.colors.textPrimary }]}>Executive Strategy</Text>
+            <Text style={[styles.insightBody, { color: theme.colors.textSecondary }]}>
+              "{aiReviewText}"
             </Text>
           </View>
 
           {/* ==================== 8. COMPLETED GOALS ==================== */}
           {completedGoals.length > 0 && (
-            <View style={styles.sectionCard}>
+            <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
               <View style={styles.sectionHeaderRow}>
                 <View>
                   <Text style={styles.sectionSub}>VICTORIES & ACHIEVEMENTS</Text>
-                  <Text style={styles.sectionTitle}>Completed Goals</Text>
+                  <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Completed Goals</Text>
                 </View>
-                <View style={styles.completedBadge}>
-                  <Text style={styles.completedBadgeText}>
+                <View style={[styles.completedBadge, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#DCFCE7' }]}>
+                  <Text style={[styles.completedBadgeText, { color: isDarkMode ? '#6EE7B7' : '#059669' }]}>
                     {completedGoals.length} finished
                   </Text>
                 </View>
@@ -673,13 +778,13 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
 
               <View style={styles.completedList}>
                 {completedGoals.map((cg) => (
-                  <View key={cg.id} style={styles.completedGoalCard}>
+                  <View key={cg.id} style={[styles.completedGoalCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
                     <View style={styles.completedCheckCircle}>
-                      <Text style={styles.completedCheckMark}>✓</Text>
+                      <Check size={11} color="#10B981" strokeWidth={3} />
                     </View>
                     <View style={styles.completedGoalBody}>
-                      <Text style={styles.completedGoalTitle}>{cg.title}</Text>
-                      <Text style={styles.completedGoalSub}>
+                      <Text style={[styles.completedGoalTitle, { color: theme.colors.textPrimary }]}>{cg.title}</Text>
+                      <Text style={[styles.completedGoalSub, { color: theme.colors.textSecondary }]}>
                         100% • Completed {cg.completedDate} • {cg.category}
                       </Text>
                     </View>
@@ -689,7 +794,7 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
             </View>
           )}
 
-          {/* Floating Add Goal Action */}
+          {/* Floating Create Goal Action */}
           <Pressable
             onPress={() => {
               setNewGoalTitle('');
@@ -699,11 +804,13 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
             }}
             style={({ pressed }) => [
               styles.floatingAddGoalBtn,
+              { backgroundColor: '#4F46E5' },
               isWeb && styles.webPointer,
               pressed && styles.pressedOpacity,
             ]}
           >
-            <Text style={styles.floatingAddGoalText}>+ Add Goal</Text>
+            <Plus size={16} color="#FFFFFF" strokeWidth={2.6} />
+            <Text style={[styles.floatingAddGoalText, { color: '#FFFFFF' }]}>Create Goal</Text>
           </Pressable>
 
           <View style={{ height: 32 }} />
@@ -718,20 +825,20 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
         onRequestClose={() => setDetailsModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalSheetCard}>
-            <View style={styles.modalHeaderRow}>
+          <View style={[styles.modalSheetCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            <View style={[styles.modalHeaderRow, { borderBottomColor: theme.colors.border }]}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.modalKicker}>GOAL SPECIFICATION</Text>
-                <Text style={styles.modalTitle} numberOfLines={2}>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]} numberOfLines={2}>
                   {selectedGoal?.title}
                 </Text>
               </View>
               <Pressable
                 onPress={() => setDetailsModalVisible(false)}
-                style={styles.modalCloseBtn}
+                style={[styles.modalCloseBtn, { backgroundColor: theme.colors.cardAltBg }]}
                 hitSlop={8}
               >
-                <Text style={styles.modalCloseText}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
@@ -740,9 +847,13 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                 <>
                   {/* Meta Chips Row */}
                   <View style={styles.detailMetaRow}>
-                    <View style={styles.categoryBadge}>
-                      <Text style={styles.categoryBadgeText}>
-                        {getCategoryIcon(selectedGoal.category)} {selectedGoal.category}
+                    <View style={[styles.categoryBadge, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                      {(() => {
+                        const CatIcon = getCategoryIconComponent(selectedGoal.category);
+                        return <CatIcon size={11} color={isDarkMode ? '#818CF8' : '#4F46E5'} strokeWidth={2.2} />;
+                      })()}
+                      <Text style={[styles.categoryBadgeText, { color: theme.colors.textSecondary }]}>
+                        {selectedGoal.category}
                       </Text>
                     </View>
 
@@ -765,33 +876,37 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                       </Text>
                     </View>
 
-                    <View style={styles.dateMetaBadge}>
-                      <Text style={styles.dateMetaText}>
+                    <View style={[styles.dateMetaBadge, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                      <Calendar size={11} color="#64748B" strokeWidth={2.2} />
+                      <Text style={[styles.dateMetaText, { color: theme.colors.textSecondary }]}>
                         Target: {selectedGoal.targetDate}
                       </Text>
                     </View>
                   </View>
 
                   {/* Description */}
-                  <View style={styles.detailBlock}>
-                    <Text style={styles.detailBlockLabel}>Description</Text>
-                    <Text style={styles.detailBlockBody}>{selectedGoal.description}</Text>
+                  <View style={[styles.detailBlock, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                    <Text style={[styles.detailBlockLabel, { color: theme.colors.textPrimary }]}>Description</Text>
+                    <Text style={[styles.detailBlockBody, { color: theme.colors.textSecondary }]}>{selectedGoal.description}</Text>
                   </View>
 
                   {/* Current Progress & Update Progress Button */}
-                  <View style={styles.detailBlock}>
+                  <View style={[styles.detailBlock, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
                     <View style={styles.progressHeaderRow}>
-                      <Text style={styles.detailBlockLabel}>Current Progress</Text>
-                      <Text style={styles.detailProgressPercent}>
+                      <Text style={[styles.detailBlockLabel, { color: theme.colors.textPrimary }]}>Current Progress</Text>
+                      <Text style={[styles.detailProgressPercent, { color: isDarkMode ? '#34D399' : '#059669' }]}>
                         {selectedGoal.progress}%
                       </Text>
                     </View>
 
-                    <View style={styles.detailProgressTrack}>
+                    <View style={[styles.detailProgressTrack, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.18)' : '#ECFDF5' }]}>
                       <View
                         style={[
                           styles.detailProgressFill,
-                          { width: `${selectedGoal.progress}%` },
+                          {
+                            width: `${selectedGoal.progress}%`,
+                            backgroundColor: isDarkMode ? '#34D399' : '#10B981',
+                          },
                         ]}
                       />
                     </View>
@@ -815,15 +930,15 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                   </View>
 
                   {/* Milestones Checklist */}
-                  <View style={styles.detailBlock}>
+                  <View style={[styles.detailBlock, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
                     <View style={styles.sectionHeaderRow}>
-                      <Text style={styles.detailBlockLabel}>Milestones</Text>
+                      <Text style={[styles.detailBlockLabel, { color: theme.colors.textPrimary }]}>Milestones</Text>
                       <Pressable
                         onPress={() => {
                           setNewMilestoneText('');
                           setAddMilestoneModalVisible(true);
                         }}
-                        style={styles.addMilestoneSmallBtn}
+                        style={[styles.addMilestoneSmallBtn, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF' }]}
                       >
                         <Text style={styles.addMilestoneSmallText}>+ Milestone</Text>
                       </Pressable>
@@ -834,7 +949,7 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                         <Pressable
                           key={m.id}
                           onPress={() => handleToggleMilestone(selectedGoal.id, m.id)}
-                          style={styles.milestoneItemRow}
+                          style={[styles.milestoneItemRow, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}
                         >
                           <View
                             style={[
@@ -843,12 +958,13 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                             ]}
                           >
                             {m.completed && (
-                              <Text style={styles.milestoneCheckIcon}>✓</Text>
+                              <Check size={10} color="#FFFFFF" strokeWidth={3} />
                             )}
                           </View>
                           <Text
                             style={[
                               styles.milestoneText,
+                              { color: theme.colors.textPrimary },
                               m.completed && styles.milestoneTextCompleted,
                             ]}
                           >
@@ -860,18 +976,18 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                   </View>
 
                   {/* Progress History */}
-                  <View style={styles.detailBlock}>
-                    <Text style={styles.detailBlockLabel}>Progress History</Text>
+                  <View style={[styles.detailBlock, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                    <Text style={[styles.detailBlockLabel, { color: theme.colors.textPrimary }]}>Progress History</Text>
                     <View style={styles.historyList}>
                       {(selectedGoal.progressHistory || []).map((h, idx) => (
                         <View key={idx} style={styles.historyItem}>
                           <View style={styles.historyDot} />
                           <View style={styles.historyContent}>
                             <View style={styles.historyHeader}>
-                              <Text style={styles.historyDate}>{h.date}</Text>
+                              <Text style={[styles.historyDate, { color: theme.colors.textPrimary }]}>{h.date}</Text>
                               <Text style={styles.historyPercent}>{h.progress}%</Text>
                             </View>
-                            <Text style={styles.historyNote}>{h.note}</Text>
+                            <Text style={[styles.historyNote, { color: theme.colors.textSecondary }]}>{h.note}</Text>
                           </View>
                         </View>
                       ))}
@@ -897,18 +1013,18 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
         onRequestClose={() => setAddModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalSheetCard}>
-            <View style={styles.modalHeaderRow}>
+          <View style={[styles.modalSheetCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            <View style={[styles.modalHeaderRow, { borderBottomColor: theme.colors.border }]}>
               <View>
                 <Text style={styles.modalKicker}>NEW OBJECTIVE</Text>
-                <Text style={styles.modalTitle}>Create New Goal</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Create New Goal</Text>
               </View>
               <Pressable
                 onPress={() => setAddModalVisible(false)}
-                style={styles.modalCloseBtn}
+                style={[styles.modalCloseBtn, { backgroundColor: theme.colors.cardAltBg }]}
                 hitSlop={8}
               >
-                <Text style={styles.modalCloseText}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
@@ -922,9 +1038,9 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
 
               {/* Goal Title */}
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Goal Title *</Text>
+                <Text style={[styles.formLabel, { color: theme.colors.textPrimary }]}>Goal Title *</Text>
                 <TextInput
-                  style={[styles.formInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.formInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   placeholder="e.g. Master React Native Architecture"
                   placeholderTextColor="#94A3B8"
                   value={newGoalTitle}
@@ -938,9 +1054,9 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
 
               {/* Description */}
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Description</Text>
+                <Text style={[styles.formLabel, { color: theme.colors.textPrimary }]}>Description</Text>
                 <TextInput
-                  style={[styles.formInput, styles.formTextArea, isWeb && styles.webOutlineNone]}
+                  style={[styles.formInput, styles.formTextArea, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   placeholder="What does success look like?"
                   placeholderTextColor="#94A3B8"
                   value={newGoalDesc}
@@ -952,35 +1068,46 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
 
               {/* Category */}
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Category</Text>
+                <Text style={[styles.formLabel, { color: theme.colors.textPrimary }]}>Category</Text>
                 <View style={styles.chipsWrapRow}>
-                  {formCategories.map((cat) => (
-                    <Pressable
-                      key={cat}
-                      onPress={() => setNewGoalCategory(cat)}
-                      style={[
-                        styles.formChip,
-                        newGoalCategory === cat && styles.formChipActive,
-                      ]}
-                    >
-                      <Text
+                  {formCategories.map((cat) => {
+                    const CatIcon = getCategoryIconComponent(cat);
+                    const isCatSelected = newGoalCategory === cat;
+                    return (
+                      <Pressable
+                        key={cat}
+                        onPress={() => setNewGoalCategory(cat)}
                         style={[
-                          styles.formChipText,
-                          newGoalCategory === cat && styles.formChipTextActive,
+                          styles.formChip,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                          isCatSelected && styles.formChipActive,
                         ]}
                       >
-                        {getCategoryIcon(cat)} {cat}
-                      </Text>
-                    </Pressable>
-                  ))}
+                        <CatIcon
+                          size={12}
+                          color={isCatSelected ? '#FFFFFF' : (isDarkMode ? '#818CF8' : '#4F46E5')}
+                          strokeWidth={2.2}
+                        />
+                        <Text
+                          style={[
+                            styles.formChipText,
+                            { color: theme.colors.textSecondary },
+                            isCatSelected && styles.formChipTextActive,
+                          ]}
+                        >
+                          {cat}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
                 </View>
               </View>
 
               {/* Target Date */}
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Target Date</Text>
+                <Text style={[styles.formLabel, { color: theme.colors.textPrimary }]}>Target Date</Text>
                 <TextInput
-                  style={[styles.formInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.formInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   placeholder="e.g. December 31 or Q4 2026"
                   placeholderTextColor="#94A3B8"
                   value={newGoalTargetDate}
@@ -990,7 +1117,7 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
 
               {/* Priority */}
               <View style={styles.formGroup}>
-                <Text style={styles.formLabel}>Priority</Text>
+                <Text style={[styles.formLabel, { color: theme.colors.textPrimary }]}>Priority</Text>
                 <View style={styles.prioritySelectorRow}>
                   {priorities.map((p) => {
                     const isSelected = newGoalPriority === p;
@@ -1001,12 +1128,14 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                         onPress={() => setNewGoalPriority(p)}
                         style={[
                           styles.prioritySelectBtn,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                           isSelected && { backgroundColor: col.bg, borderColor: col.border },
                         ]}
                       >
                         <Text
                           style={[
                             styles.prioritySelectText,
+                            { color: theme.colors.textSecondary },
                             isSelected && { color: col.text, fontWeight: '800' },
                           ]}
                         >
@@ -1022,16 +1151,16 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
             <View style={styles.modalActionButtonsRow}>
               <Pressable
                 onPress={() => setAddModalVisible(false)}
-                style={styles.modalCancelBtn}
+                style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
               </Pressable>
 
               <Pressable
                 onPress={handleCreateGoal}
-                style={styles.modalSubmitLimeBtn}
+                style={[styles.modalSubmitLimeBtn, { backgroundColor: '#4F46E5' }]}
               >
-                <Text style={styles.modalSubmitLimeText}>Create Goal</Text>
+                <Text style={[styles.modalSubmitLimeText, { color: '#FFFFFF', fontWeight: '800' }]}>Create Goal</Text>
               </Pressable>
             </View>
           </View>
@@ -1046,13 +1175,13 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
         onRequestClose={() => setEditProgressModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.editProgressCard}>
-            <Text style={styles.editProgressTitle}>Update Goal Progress</Text>
-            <Text style={styles.editProgressSub}>
+          <View style={[styles.editProgressCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            <Text style={[styles.editProgressTitle, { color: theme.colors.textPrimary }]}>Update Goal Progress</Text>
+            <Text style={[styles.editProgressSub, { color: theme.colors.textSecondary }]}>
               {targetOptionGoal?.title}
             </Text>
 
-            <View style={styles.progressNumberBox}>
+            <View style={[styles.progressNumberBox, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF', borderColor: theme.colors.border }]}>
               <Text style={styles.progressBigNumber}>{newProgressValue}%</Text>
             </View>
 
@@ -1064,12 +1193,14 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                   onPress={() => setNewProgressValue(pct)}
                   style={[
                     styles.presetBtn,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                     newProgressValue === pct && styles.presetBtnActive,
                   ]}
                 >
                   <Text
                     style={[
                       styles.presetBtnText,
+                      { color: theme.colors.textSecondary },
                       newProgressValue === pct && styles.presetBtnTextActive,
                     ]}
                   >
@@ -1080,9 +1211,9 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
             </View>
 
             <View style={styles.customInputRow}>
-              <Text style={styles.customInputLabel}>Custom %:</Text>
+              <Text style={[styles.customInputLabel, { color: theme.colors.textSecondary }]}>Custom %:</Text>
               <TextInput
-                style={styles.customProgressInput}
+                style={[styles.customProgressInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }]}
                 keyboardType="numeric"
                 value={String(newProgressValue)}
                 onChangeText={(v) => setNewProgressValue(parseInt(v, 10) || 0)}
@@ -1092,9 +1223,9 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
             <View style={styles.modalActionButtonsRow}>
               <Pressable
                 onPress={() => setEditProgressModalVisible(false)}
-                style={styles.modalCancelBtn}
+                style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
               </Pressable>
 
               <Pressable
@@ -1122,8 +1253,8 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
           style={styles.modalOverlay}
           onPress={() => setOptionsModalVisible(false)}
         >
-          <View style={styles.optionsMenuCard}>
-            <Text style={styles.optionsMenuHeader} numberOfLines={1}>
+          <View style={[styles.optionsMenuCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            <Text style={[styles.optionsMenuHeader, { color: theme.colors.textPrimary, borderBottomColor: theme.colors.border }]} numberOfLines={1}>
               {targetOptionGoal?.title}
             </Text>
 
@@ -1137,8 +1268,8 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
               }}
               style={styles.optionMenuItem}
             >
-              <Text style={styles.optionMenuIcon}>👁️</Text>
-              <Text style={styles.optionMenuLabel}>View Details</Text>
+              <Eye size={18} color={isDarkMode ? '#818CF8' : '#4F46E5'} strokeWidth={2.2} />
+              <Text style={[styles.optionMenuLabel, { color: theme.colors.textPrimary }]}>View Details</Text>
             </Pressable>
 
             <Pressable
@@ -1151,8 +1282,8 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
               }}
               style={styles.optionMenuItem}
             >
-              <Text style={styles.optionMenuIcon}>📊</Text>
-              <Text style={styles.optionMenuLabel}>Update Progress</Text>
+              <TrendingUp size={18} color={isDarkMode ? '#818CF8' : '#4F46E5'} strokeWidth={2.2} />
+              <Text style={[styles.optionMenuLabel, { color: theme.colors.textPrimary }]}>Update Progress</Text>
             </Pressable>
 
             <Pressable
@@ -1166,8 +1297,8 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
               }}
               style={styles.optionMenuItem}
             >
-              <Text style={styles.optionMenuIcon}>🚩</Text>
-              <Text style={styles.optionMenuLabel}>Add Milestone</Text>
+              <Flag size={18} color={isDarkMode ? '#818CF8' : '#4F46E5'} strokeWidth={2.2} />
+              <Text style={[styles.optionMenuLabel, { color: theme.colors.textPrimary }]}>Add Milestone</Text>
             </Pressable>
 
             <Pressable
@@ -1177,8 +1308,8 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
               }}
               style={styles.optionMenuItem}
             >
-              <Text style={styles.optionMenuIcon}>📦</Text>
-              <Text style={styles.optionMenuLabel}>Archive Goal</Text>
+              <Archive size={18} color="#64748B" strokeWidth={2.2} />
+              <Text style={[styles.optionMenuLabel, { color: theme.colors.textPrimary }]}>Archive Goal</Text>
             </Pressable>
 
             <Pressable
@@ -1189,7 +1320,7 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
               }}
               style={[styles.optionMenuItem, styles.optionMenuItemDanger]}
             >
-              <Text style={styles.optionMenuIcon}>🗑️</Text>
+              <Trash2 size={18} color="#EF4444" strokeWidth={2.2} />
               <Text style={styles.optionMenuLabelDanger}>Delete Goal</Text>
             </Pressable>
           </View>
@@ -1204,21 +1335,21 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
         onRequestClose={() => setDeleteModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.deleteConfirmCard}>
+          <View style={[styles.deleteConfirmCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.deleteWarningIconBox}>
-              <Text style={styles.deleteWarningIcon}>🗑️</Text>
+              <Trash2 size={24} color="#EF4444" strokeWidth={2.2} />
             </View>
-            <Text style={styles.deleteModalTitle}>Delete Goal?</Text>
-            <Text style={styles.deleteModalMessage}>
+            <Text style={[styles.deleteModalTitle, { color: theme.colors.textPrimary }]}>Delete Goal?</Text>
+            <Text style={[styles.deleteModalMessage, { color: theme.colors.textSecondary }]}>
               Are you sure you want to delete this goal?
             </Text>
 
             <View style={styles.deleteActionButtonsRow}>
               <Pressable
                 onPress={() => setDeleteModalVisible(false)}
-                style={styles.deleteCancelBtn}
+                style={[styles.deleteCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
               >
-                <Text style={styles.deleteCancelText}>Cancel</Text>
+                <Text style={[styles.deleteCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
               </Pressable>
 
               <Pressable
@@ -1240,10 +1371,10 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
         onRequestClose={() => setAddMilestoneModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.smallFormCard}>
-            <Text style={styles.smallFormTitle}>Add Milestone</Text>
+          <View style={[styles.smallFormCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            <Text style={[styles.smallFormTitle, { color: theme.colors.textPrimary }]}>Add Milestone</Text>
             <TextInput
-              style={[styles.formInput, isWeb && styles.webOutlineNone]}
+              style={[styles.formInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
               placeholder="e.g. Finish prototype testing"
               placeholderTextColor="#94A3B8"
               value={newMilestoneText}
@@ -1254,9 +1385,9 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
             <View style={styles.modalActionButtonsRow}>
               <Pressable
                 onPress={() => setAddMilestoneModalVisible(false)}
-                style={styles.modalCancelBtn}
+                style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
               </Pressable>
 
               <Pressable
@@ -1276,11 +1407,13 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A0E1A" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.appBg }]} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle={theme.colors.statusBarStyle} backgroundColor={theme.colors.appBg} />
       {isDesktop ? (
-        <View style={styles.desktopOuterContainer}>
-          <View style={styles.desktopShell}>{appContent}</View>
+        <View style={[styles.desktopOuterContainer, { backgroundColor: theme.colors.desktopBg }]}>
+          <View style={[styles.desktopShell, { backgroundColor: theme.colors.appBg, borderColor: theme.colors.borderDark }]}>
+            {appContent}
+          </View>
         </View>
       ) : (
         appContent
@@ -1323,7 +1456,6 @@ const styles = StyleSheet.create({
   },
   scrollContentContainer: {
     flexGrow: 1,
-    backgroundColor: '#F8FAFC',
     paddingBottom: 24,
   },
 
@@ -1369,7 +1501,7 @@ const styles = StyleSheet.create({
   headerActionBtn: {
     width: 38,
     height: 38,
-    borderRadius: 19,
+    borderRadius: 14,
     backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1384,20 +1516,24 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   headerAddBtn: {
-    backgroundColor: '#D6EF90', // HumanOS Lime Accent
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#4F46E5', // HumanOS signature primary indigo
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 14,
-    shadowColor: '#D6EF90',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
     shadowRadius: 6,
     elevation: 3,
   },
   headerAddBtnText: {
-    color: '#0F172A',
-    fontSize: 12.5,
-    fontWeight: '800',
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
 
   searchBarContainer: {
@@ -1472,49 +1608,50 @@ const styles = StyleSheet.create({
     elevation: 3,
     marginBottom: 16,
   },
+  overviewHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
   overviewTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 10,
+    alignItems: 'center',
+    marginBottom: 14,
   },
   overviewKicker: {
-    color: '#059669', // Dark Green
     fontSize: 9.5,
     fontWeight: '800',
     letterSpacing: 1.2,
   },
   overviewTitle: {
-    color: '#0F172A',
-    fontSize: 20,
+    fontSize: 19,
     fontWeight: '800',
     letterSpacing: -0.4,
     marginTop: 2,
   },
   progressBadge: {
-    backgroundColor: '#DCFCE7', // Light green
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#86EFAC',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   progressBadgeText: {
-    color: '#059669', // Dark green
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
   },
   progressBarTrack: {
-    height: 10,
-    backgroundColor: '#DCFCE7', // Light green track
-    borderRadius: 5,
+    height: 8,
+    borderRadius: 4,
     overflow: 'hidden',
     marginBottom: 14,
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: '#059669', // Dark green progress
-    borderRadius: 5,
+    borderRadius: 4,
   },
   overviewStatsRow: {
     flexDirection: 'row',
@@ -1530,6 +1667,11 @@ const styles = StyleSheet.create({
     color: '#0F172A',
     fontSize: 14,
     fontWeight: '800',
+  },
+  streakValRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   statLabel: {
     color: '#64748B',
@@ -1552,7 +1694,10 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   categoryChip: {
-    paddingHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 14,
     borderWidth: 1,
@@ -1610,6 +1755,17 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 8,
   },
+  emptyStateBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#EEF2FF',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
   goalsList: {
     gap: 12,
     marginBottom: 16,
@@ -1649,6 +1805,9 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   categoryBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#F1F5F9',
     paddingHorizontal: 9,
     paddingVertical: 3,
@@ -1681,19 +1840,21 @@ const styles = StyleSheet.create({
   goalProgressSection: {
     marginBottom: 12,
   },
+  goalProgressPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
   progressInfoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 6,
   },
   progressPercentLabel: {
-    color: '#0F172A',
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: '800',
   },
   milestoneMiniText: {
-    color: '#64748B',
     fontSize: 11.5,
     fontWeight: '600',
   },
@@ -1715,10 +1876,30 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#F8FAFC',
   },
+  targetDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   targetDateText: {
     color: '#64748B',
     fontSize: 12,
     fontWeight: '600',
+  },
+  floatingAddGoalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#4F46E5',
+    paddingVertical: 14,
+    borderRadius: 18,
+    marginTop: 8,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 4,
   },
   quickUpdateBtn: {
     backgroundColor: '#EEF2FF',
@@ -1844,8 +2025,16 @@ const styles = StyleSheet.create({
     letterSpacing: -0.4,
     marginBottom: 6,
   },
+  insightRefreshBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  insightRefreshText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
   insightBody: {
-    color: '#E2E8F0',
     fontSize: 13,
     lineHeight: 19,
     fontStyle: 'italic',

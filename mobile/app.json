@@ -9,12 +9,17 @@
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "android": {
       "package": "com.humanos.app"
     },
     "ios": {
       "bundleIdentifier": "com.humanos.app"
-    }
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
   }
 }

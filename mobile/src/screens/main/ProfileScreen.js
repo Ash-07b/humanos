@@ -11,16 +11,64 @@ import {
   Alert,
   Platform,
   Modal,
+  Image,
   useWindowDimensions,
   ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import {
+  ShieldCheck,
+  Settings,
+  Camera,
+  Pencil,
+  UserRound,
+  Mail,
+  Phone,
+  UserCheck,
+  Calendar,
+  Lock,
+  Bell,
+  Link,
+  ChevronRight,
+  ChevronUp,
+  ChevronDown,
+  Moon,
+  Sun,
+  Globe,
+  CalendarDays,
+  Clock,
+  HeartPulse,
+  Target,
+  Zap,
+  Sparkles,
+  Fingerprint,
+  KeyRound,
+  Smartphone,
+  HelpCircle,
+  MessageSquare,
+  Info,
+  FileText,
+  LogOut,
+  Check,
+  X,
+  Search,
+  Headphones,
+  ArrowUpRight,
+  Upload,
+  ImageIcon,
+} from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
+import DatePickerModal from '../../components/DatePickerModal';
+import { useTheme } from '../../contexts/ThemeContext';
+import { updateUserProfile } from '../../services/api';
+import { getToken, saveUser } from '../../services/storage';
 
 export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
   const { width, height } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktop = isWeb && width >= 768;
+  const { theme, isDarkMode, setDarkMode } = useTheme();
 
   // Active Tab state
   const [activeTab, setActiveTab] = useState('profile');
@@ -68,7 +116,6 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(user?.preferences?.twoFactorEnabled ?? false);
   const [pushNotifications, setPushNotifications] = useState(user?.preferences?.pushNotifications ?? true);
   const [aiPersonalization, setAiPersonalization] = useState(user?.preferences?.aiPersonalization ?? true);
-  const [darkMode, setDarkMode] = useState(user?.preferences?.darkMode ?? true);
 
   // Preference Dropdowns / Values
   const [language, setLanguage] = useState(user?.preferences?.language || 'English (US)');
@@ -164,6 +211,96 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
     }
   };
 
+  // Custom Avatar & Date Picker State
+  const [customImageUrl, setCustomImageUrl] = useState('');
+  const [datePickerVisible, setDatePickerVisible] = useState(false);
+
+  const isCustomImage = (val) => {
+    return (
+      typeof val === 'string' &&
+      (val.startsWith('http://') ||
+        val.startsWith('https://') ||
+        val.startsWith('data:') ||
+        val.startsWith('file:') ||
+        val.startsWith('blob:') ||
+        val.startsWith('ph://'))
+    );
+  };
+
+  // Database Sync Helper
+  const syncProfileToBackend = async (patch) => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await updateUserProfile(patch, token);
+      if (res.success && res.user) {
+        await saveUser(res.user);
+      }
+    } catch (e) {
+      console.log('Error syncing profile to database:', e);
+    }
+  };
+
+  const updateAvatarAndSave = async (newPic) => {
+    setAvatar(newPic);
+    setPhotoPickerVisible(false);
+    showNotice(isCustomImage(newPic) ? 'Profile picture updated & saved' : `Avatar updated to ${newPic}`);
+    await syncProfileToBackend({ profilePicture: newPic });
+  };
+
+  const pickImageFromGallery = async () => {
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permission.granted && permission.status !== 'granted') {
+        showNotice('Photo library access is required');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+      if (!result.canceled && result.assets && result.assets[0]?.uri) {
+        await updateAvatarAndSave(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.log('Image picker error:', err);
+      showNotice('Could not select picture');
+    }
+  };
+
+  const takePhotoWithCamera = async () => {
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted && permission.status !== 'granted') {
+        showNotice('Camera access is required');
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+      if (!result.canceled && result.assets && result.assets[0]?.uri) {
+        await updateAvatarAndSave(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.log('Camera error:', err);
+      showNotice('Could not open camera');
+    }
+  };
+
+  const handleApplyCustomUrl = async () => {
+    if (!customImageUrl.trim()) {
+      showNotice('Please enter an image URL');
+      return;
+    }
+    const url = customImageUrl.trim();
+    setCustomImageUrl('');
+    await updateAvatarAndSave(url);
+  };
+
   const handleOpenEdit = () => {
     setTempName(fullName);
     setTempEmail(email);
@@ -173,7 +310,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
     setEditProfileModalVisible(true);
   };
 
-  const handleSaveProfile = () => {
+  const handleSaveProfile = async () => {
     setFullName(tempName);
     setEmail(tempEmail);
     setPhoneNumber(tempPhone);
@@ -181,6 +318,24 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
     setDob(tempDob);
     setEditProfileModalVisible(false);
     showNotice('Profile updated successfully');
+    await syncProfileToBackend({
+      fullName: tempName,
+      phoneNumber: tempPhone,
+      gender: tempGender,
+      dateOfBirth: tempDob,
+      profilePicture: avatar,
+    });
+  };
+
+  const handleToggleDarkMode = async (val) => {
+    setDarkMode(val);
+    showNotice(val ? 'Dark Mode (Obsidian Navy) activated' : 'Light Mode (Clean Daylight) activated');
+    await syncProfileToBackend({
+      preferences: {
+        ...(user?.preferences || {}),
+        darkMode: val,
+      },
+    });
   };
 
   const showNotice = (msg) => {
@@ -275,17 +430,18 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
   };
 
   const appContent = (
-    <View style={styles.mainWrapper}>
+    <View style={[styles.mainWrapper, { backgroundColor: theme.colors.pageBg }]}>
       {/* Floating Feedback Toast Always on Top */}
       {feedbackMessage !== '' && (
         <View style={styles.floatingToastNotice}>
-          <Text style={styles.floatingToastText}>✓ {feedbackMessage}</Text>
+          <Check size={14} color="#FFFFFF" strokeWidth={3} />
+          <Text style={styles.floatingToastText}>{feedbackMessage}</Text>
         </View>
       )}
 
       <ScrollView
-        style={styles.scrollContainer}
-        contentContainerStyle={styles.scrollContentContainer}
+        style={[styles.scrollContainer, { backgroundColor: theme.colors.appBg }]}
+        contentContainerStyle={[styles.scrollContentContainer, { backgroundColor: theme.colors.pageBg }]}
         showsVerticalScrollIndicator={false}
       >
         {/* 1. PROFESSIONAL EXECUTIVE HEADER SECTION */}
@@ -314,7 +470,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                 ]}
                 hitSlop={8}
               >
-                <Text style={styles.headerIconEmoji}>🛡️</Text>
+                <ShieldCheck size={18} color="#C7D2FE" strokeWidth={2.2} />
               </Pressable>
 
               <Pressable
@@ -326,7 +482,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                 ]}
                 hitSlop={8}
               >
-                <Text style={styles.headerIconEmoji}>⚙️</Text>
+                <Settings size={18} color="#C7D2FE" strokeWidth={2.2} />
               </Pressable>
             </View>
           </View>
@@ -344,12 +500,16 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         </ImageBackground>
 
         {/* 2. ELEVATED EXECUTIVE PROFILE CARD */}
-        <View style={styles.profileCard}>
+        <View style={[styles.profileCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, shadowColor: theme.colors.shadowColor }]}>
           <View style={styles.profileCardMain}>
             <View style={styles.avatarSection}>
               <View style={styles.avatarGlowRing}>
-                <View style={styles.avatarCircle}>
-                  <Text style={styles.avatarEmoji}>{avatar}</Text>
+                <View style={[styles.avatarCircle, { backgroundColor: theme.colors.cardAltBg }]}>
+                  {isCustomImage(avatar) ? (
+                    <Image source={{ uri: avatar }} style={styles.avatarCustomImg} resizeMode="cover" />
+                  ) : (
+                    <Text style={styles.avatarEmoji}>{avatar}</Text>
+                  )}
                 </View>
               </View>
               <Pressable
@@ -360,30 +520,31 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.changePhotoBadgeIcon}>📷</Text>
+                <Camera size={13} color="#FFFFFF" strokeWidth={2.2} />
               </Pressable>
             </View>
 
             <View style={styles.profileInfoColumn}>
               <View style={styles.nameRow}>
-                <Text style={styles.userName}>{fullName || user?.username || 'HumanOS User'}</Text>
+                <Text style={[styles.userName, { color: theme.colors.textPrimary }]}>{fullName || user?.username || 'HumanOS User'}</Text>
                 {isPro && (
                   <View style={styles.verifiedBadge}>
-                    <Text style={styles.verifiedText}>✓ PRO</Text>
+                    <Check size={10} color="#059669" strokeWidth={3} />
+                    <Text style={styles.verifiedText}>PRO</Text>
                   </View>
                 )}
               </View>
-              <Text style={styles.userEmail}>{email || 'No email registered'}</Text>
+              <Text style={[styles.userEmail, { color: theme.colors.textSecondary }]}>{email || 'No email registered'}</Text>
 
               <View style={styles.userMetaBadges}>
                 {gender ? (
-                  <View style={styles.metaBadge}>
-                    <Text style={styles.metaBadgeText}>{gender}</Text>
+                  <View style={[styles.metaBadge, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                    <Text style={[styles.metaBadgeText, { color: theme.colors.textSecondary }]}>{gender}</Text>
                   </View>
                 ) : null}
                 {phoneNumber ? (
-                  <View style={styles.metaBadge}>
-                    <Text style={styles.metaBadgeText}>{phoneNumber}</Text>
+                  <View style={[styles.metaBadge, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                    <Text style={[styles.metaBadgeText, { color: theme.colors.textSecondary }]}>{phoneNumber}</Text>
                   </View>
                 ) : null}
               </View>
@@ -391,20 +552,20 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
           </View>
 
           {/* Quick Profile Performance Counters */}
-          <View style={styles.statsStrip}>
+          <View style={[styles.statsStrip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{securityScore ? `${securityScore}%` : '0%'}</Text>
-              <Text style={styles.statLabel}>Security Score</Text>
+              <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{securityScore ? `${securityScore}%` : '0%'}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>Security Score</Text>
             </View>
-            <View style={styles.statDivider} />
+            <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{activeStreak > 0 ? `${activeStreak} Days` : '0 Days'}</Text>
-              <Text style={styles.statLabel}>Active Streak</Text>
+              <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{activeStreak > 0 ? `${activeStreak} Days` : '0 Days'}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>Active Streak</Text>
             </View>
-            <View style={styles.statDivider} />
+            <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{memberStatus || 'Active'}</Text>
-              <Text style={styles.statLabel}>Member Status</Text>
+              <Text style={[styles.statValue, { color: theme.colors.textPrimary }]}>{memberStatus || 'Active'}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>Member Status</Text>
             </View>
           </View>
 
@@ -418,28 +579,30 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                 pressed && styles.buttonPressed,
               ]}
             >
-              <Text style={styles.editProfileButtonText}>✏️ Edit Profile</Text>
+              <Pencil size={13} color="#4F46E5" strokeWidth={2.2} />
+              <Text style={styles.editProfileButtonText}>Edit Profile</Text>
             </Pressable>
 
             <Pressable
               onPress={() => setPhotoPickerVisible(true)}
               style={({ pressed }) => [
                 styles.changePhotoButton,
+                { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                 isWeb && styles.webPointer,
                 pressed && styles.pressedOpacity,
               ]}
             >
-              <Text style={styles.changePhotoButtonText}>Change Photo</Text>
+              <Text style={[styles.changePhotoButtonText, { color: theme.colors.textPrimary }]}>Change Photo</Text>
             </Pressable>
           </View>
         </View>
 
         {/* 3. PERSONAL INFORMATION */}
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, shadowColor: theme.colors.shadowColor }]}>
           <View style={styles.sectionHeaderRow}>
             <View>
               <Text style={styles.sectionKicker}>ACCOUNT DETAILS</Text>
-              <Text style={styles.sectionTitle}>Personal Information</Text>
+              <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Personal Information</Text>
             </View>
             <Pressable
               onPress={handleOpenEdit}
@@ -454,166 +617,169 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
           </View>
 
           <View style={styles.infoList}>
-            <View style={styles.infoRow}>
-              <View style={styles.infoIconWrap}>
-                <Text style={styles.infoIcon}>👤</Text>
+            <View style={[styles.infoRow, { borderBottomColor: theme.colors.border }]}>
+              <View style={[styles.infoIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <UserRound size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.infoTexts}>
-                <Text style={styles.infoLabel}>Full Name</Text>
-                <Text style={styles.infoValue}>{fullName || 'Not provided'}</Text>
+                <Text style={[styles.infoLabel, { color: theme.colors.textMuted }]}>Full Name</Text>
+                <Text style={[styles.infoValue, { color: theme.colors.textPrimary }]}>{fullName || 'Not provided'}</Text>
               </View>
             </View>
 
-            <View style={styles.infoRow}>
-              <View style={styles.infoIconWrap}>
-                <Text style={styles.infoIcon}>✉️</Text>
+            <View style={[styles.infoRow, { borderBottomColor: theme.colors.border }]}>
+              <View style={[styles.infoIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <Mail size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.infoTexts}>
-                <Text style={styles.infoLabel}>Email</Text>
-                <Text style={styles.infoValue}>{email || 'Not provided'}</Text>
+                <Text style={[styles.infoLabel, { color: theme.colors.textMuted }]}>Email</Text>
+                <Text style={[styles.infoValue, { color: theme.colors.textPrimary }]}>{email || 'Not provided'}</Text>
               </View>
             </View>
 
-            <View style={styles.infoRow}>
-              <View style={styles.infoIconWrap}>
-                <Text style={styles.infoIcon}>📞</Text>
+            <View style={[styles.infoRow, { borderBottomColor: theme.colors.border }]}>
+              <View style={[styles.infoIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <Phone size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.infoTexts}>
-                <Text style={styles.infoLabel}>Phone</Text>
-                <Text style={styles.infoValue}>{phoneNumber || 'Not provided'}</Text>
+                <Text style={[styles.infoLabel, { color: theme.colors.textMuted }]}>Phone</Text>
+                <Text style={[styles.infoValue, { color: theme.colors.textPrimary }]}>{phoneNumber || 'Not provided'}</Text>
               </View>
             </View>
 
-            <View style={styles.infoRow}>
-              <View style={styles.infoIconWrap}>
-                <Text style={styles.infoIcon}>⚧</Text>
+            <View style={[styles.infoRow, { borderBottomColor: theme.colors.border }]}>
+              <View style={[styles.infoIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <UserCheck size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.infoTexts}>
-                <Text style={styles.infoLabel}>Gender</Text>
-                <Text style={styles.infoValue}>{gender || 'Not specified'}</Text>
+                <Text style={[styles.infoLabel, { color: theme.colors.textMuted }]}>Gender</Text>
+                <Text style={[styles.infoValue, { color: theme.colors.textPrimary }]}>{gender || 'Not specified'}</Text>
               </View>
             </View>
 
             <View style={[styles.infoRow, { borderBottomWidth: 0 }]}>
-              <View style={styles.infoIconWrap}>
-                <Text style={styles.infoIcon}>📅</Text>
+              <View style={[styles.infoIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <Calendar size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.infoTexts}>
-                <Text style={styles.infoLabel}>Date of Birth</Text>
-                <Text style={styles.infoValue}>{dob || 'Not specified'}</Text>
+                <Text style={[styles.infoLabel, { color: theme.colors.textMuted }]}>Date of Birth</Text>
+                <Text style={[styles.infoValue, { color: theme.colors.textPrimary }]}>{dob || 'Not specified'}</Text>
               </View>
             </View>
           </View>
         </View>
 
         {/* 4. ACCOUNT SETTINGS */}
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, shadowColor: theme.colors.shadowColor }]}>
           <Text style={styles.sectionKicker}>SECURITY & INTEGRATIONS</Text>
-          <Text style={styles.sectionTitle}>Account</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Account</Text>
 
           <View style={styles.rowsList}>
             <Pressable
               onPress={() => handleRowPress('Change Password')}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>🔒</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <Lock size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Change Password</Text>
-                <Text style={styles.settingDesc}>Update your security credentials</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Change Password</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Update your security credentials</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
 
             <Pressable
               onPress={() => handleRowPress('Privacy & Security')}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>🛡️</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <ShieldCheck size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Privacy & Security</Text>
-                <Text style={styles.settingDesc}>Data sharing and permissions</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Privacy & Security</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Data sharing and permissions</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
 
             <Pressable
               onPress={() => handleRowPress('Notification Settings')}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>🔔</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <Bell size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Notification Settings</Text>
-                <Text style={styles.settingDesc}>Manage alerts and daily digests</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Notification Settings</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Manage alerts and daily digests</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
 
             <Pressable
               onPress={() => handleRowPress('Connected Accounts')}
               style={({ pressed }) => [styles.settingRow, { borderBottomWidth: 0 }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>🔗</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <Link size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Connected Accounts</Text>
-                <Text style={styles.settingDesc}>Google, Apple & calendar sync</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Connected Accounts</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Google, Apple & calendar sync</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
           </View>
         </View>
 
         {/* 5. HUMANOS PREFERENCES */}
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, shadowColor: theme.colors.shadowColor }]}>
           <Text style={styles.sectionKicker}>APP CONFIGURATION</Text>
-          <Text style={styles.sectionTitle}>Preferences</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Preferences</Text>
 
           <View style={styles.rowsList}>
             <View style={styles.controlRow}>
-              <View style={[styles.settingIconWrap, { backgroundColor: darkMode ? '#1E293B' : '#FEF3C7' }]}>
-                <Text style={styles.settingIcon}>{darkMode ? '🌙' : '☀️'}</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: isDarkMode ? '#1E293B' : '#FEF3C7' }]}>
+                {isDarkMode ? (
+                  <Moon size={16} color="#818CF8" strokeWidth={2.2} />
+                ) : (
+                  <Sun size={16} color="#D97706" strokeWidth={2.2} />
+                )}
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Dark Mode</Text>
-                <Text style={styles.settingDesc}>
-                  {darkMode ? 'Dark Mode (Obsidian Navy)' : 'Light Mode (Clean Daylight)'}
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>
+                  {isDarkMode ? 'Dark Mode' : 'Light Mode'}
+                </Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>
+                  {isDarkMode ? 'Obsidian executive dark theme' : 'Clean Daylight light theme'}
                 </Text>
               </View>
               <View style={styles.themeToggleGroup}>
-                <Text style={[styles.themePillLabel, darkMode ? styles.themePillDark : styles.themePillLight]}>
-                  {darkMode ? 'Dark' : 'Light'}
+                <Text style={[styles.themePillLabel, isDarkMode ? styles.themePillDark : styles.themePillLight]}>
+                  {isDarkMode ? 'Dark' : 'Light'}
                 </Text>
                 <Switch
-                  value={darkMode}
-                  onValueChange={(val) => {
-                    setDarkMode(val);
-                    showNotice(val ? 'Dark mode enabled' : 'Light mode enabled');
-                  }}
+                  value={isDarkMode}
+                  onValueChange={handleToggleDarkMode}
                   trackColor={{ false: '#CBD5E1', true: '#4F46E5' }}
-                  thumbColor={darkMode ? '#818CF8' : '#FFFFFF'}
+                  thumbColor={isDarkMode ? '#818CF8' : '#FFFFFF'}
                 />
               </View>
             </View>
 
             <Pressable
               onPress={cycleLanguage}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>🌐</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <Globe size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Language</Text>
-                <Text style={styles.settingDesc}>{language}</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Language</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>{language}</Text>
               </View>
-              <Text style={styles.pillControl}>{language.split(' ')[0]}</Text>
+              <Text style={[styles.pillControl, { backgroundColor: theme.colors.cardAltBg, color: theme.colors.textPrimary }]}>{language.split(' ')[0]}</Text>
             </Pressable>
 
             <Pressable
@@ -622,16 +788,16 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                 setStartOfWeek(next);
                 showNotice(`Start of week set to ${next}`);
               }}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>📆</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <CalendarDays size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Start of Week</Text>
-                <Text style={styles.settingDesc}>Calendar alignment</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Start of Week</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Calendar alignment</Text>
               </View>
-              <Text style={styles.pillControl}>{startOfWeek}</Text>
+              <Text style={[styles.pillControl, { backgroundColor: theme.colors.cardAltBg, color: theme.colors.textPrimary }]}>{startOfWeek}</Text>
             </Pressable>
 
             <Pressable
@@ -642,73 +808,73 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               }}
               style={({ pressed }) => [styles.settingRow, { borderBottomWidth: 0 }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>⏰</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <Clock size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Default Reminder Time</Text>
-                <Text style={styles.settingDesc}>Daily morning check-in</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Default Reminder Time</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Daily morning check-in</Text>
               </View>
-              <Text style={styles.pillControl}>{reminderTime}</Text>
+              <Text style={[styles.pillControl, { backgroundColor: theme.colors.cardAltBg, color: theme.colors.textPrimary }]}>{reminderTime}</Text>
             </Pressable>
           </View>
         </View>
 
         {/* 6. HEALTH & PERSONALIZATION */}
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, shadowColor: theme.colors.shadowColor }]}>
           <Text style={styles.sectionKicker}>MODULES & AI</Text>
-          <Text style={styles.sectionTitle}>Personalization</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Personalization</Text>
 
           <View style={styles.rowsList}>
             <Pressable
               onPress={() => handleRowPress('Health Profile')}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={[styles.settingIconWrap, { backgroundColor: '#E0F2FE' }]}>
-                <Text style={styles.settingIcon}>♡</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: isDarkMode ? 'rgba(2, 132, 199, 0.2)' : '#E0F2FE' }]}>
+                <HeartPulse size={16} color="#0284C7" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Health Profile</Text>
-                <Text style={styles.settingDesc}>Metrics, sleep & wellness tracking</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Health Profile</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Metrics, sleep & wellness tracking</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
 
             <Pressable
               onPress={() => handleRowPress('Goals')}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={[styles.settingIconWrap, { backgroundColor: '#EEF2FF' }]}>
-                <Text style={styles.settingIcon}>🎯</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF' }]}>
+                <Target size={16} color="#4F46E5" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Goals</Text>
-                <Text style={styles.settingDesc}>Quarterly milestones & targets</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Goals</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Quarterly milestones & targets</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
 
             <Pressable
               onPress={() => handleRowPress('Habits')}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={[styles.settingIconWrap, { backgroundColor: '#FEF3C7' }]}>
-                <Text style={styles.settingIcon}>⚡</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: isDarkMode ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7' }]}>
+                <Zap size={16} color="#D97706" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Habits</Text>
-                <Text style={styles.settingDesc}>Daily routines and loops</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Habits</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Daily routines and loops</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
 
             <View style={[styles.controlRow, { borderBottomWidth: 0 }]}>
-              <View style={[styles.settingIconWrap, { backgroundColor: '#F3E8FF' }]}>
-                <Text style={styles.settingIcon}>🧠</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: isDarkMode ? 'rgba(147, 51, 234, 0.2)' : '#F3E8FF' }]}>
+                <Sparkles size={16} color="#9333EA" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>AI Personalization</Text>
-                <Text style={styles.settingDesc}>Adaptive suggestions & cadence</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>AI Personalization</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Adaptive suggestions & cadence</Text>
               </View>
               <Switch
                 value={aiPersonalization}
@@ -721,18 +887,18 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         </View>
 
         {/* 7. SECURITY */}
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, shadowColor: theme.colors.shadowColor }]}>
           <Text style={styles.sectionKicker}>AUTHENTICATION</Text>
-          <Text style={styles.sectionTitle}>Security</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Security</Text>
 
           <View style={styles.rowsList}>
-            <View style={styles.controlRow}>
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>🔐</Text>
+            <View style={[styles.controlRow, { borderBottomColor: theme.colors.border }]}>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <Fingerprint size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Biometric Login</Text>
-                <Text style={styles.settingDesc}>FaceID / Fingerprint authorization</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Biometric Login</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>FaceID / Fingerprint authorization</Text>
               </View>
               <Switch
                 value={biometricsEnabled}
@@ -742,13 +908,13 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               />
             </View>
 
-            <View style={styles.controlRow}>
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>🔑</Text>
+            <View style={[styles.controlRow, { borderBottomColor: theme.colors.border }]}>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <KeyRound size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Two-Factor Authentication</Text>
-                <Text style={styles.settingDesc}>Additional verification code</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Two-Factor Authentication</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Additional verification code</Text>
               </View>
               <Switch
                 value={twoFactorEnabled}
@@ -762,92 +928,92 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               onPress={() => handleRowPress('Active Sessions')}
               style={({ pressed }) => [styles.settingRow, { borderBottomWidth: 0 }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>📱</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <Smartphone size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Active Sessions</Text>
-                <Text style={styles.settingDesc}>2 devices currently signed in</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Active Sessions</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>2 devices currently signed in</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
           </View>
         </View>
 
         {/* 8. SUPPORT */}
-        <View style={styles.sectionCard}>
+        <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, shadowColor: theme.colors.shadowColor }]}>
           <Text style={styles.sectionKicker}>HELP & POLICIES</Text>
-          <Text style={styles.sectionTitle}>Support</Text>
+          <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Support</Text>
 
           <View style={styles.rowsList}>
             <Pressable
               onPress={() => handleRowPress('Help Center')}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>❓</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <HelpCircle size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Help Center</Text>
-                <Text style={styles.settingDesc}>FAQs, guides and tutorials</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Help Center</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>FAQs, guides and tutorials</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
 
             <Pressable
               onPress={() => handleRowPress('Contact Support')}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>💬</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <MessageSquare size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Contact Support</Text>
-                <Text style={styles.settingDesc}>Reach out to the team</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Contact Support</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Reach out to the team</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
 
             <Pressable
               onPress={() => handleRowPress('About HumanOS')}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>ℹ️</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <Info size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>About HumanOS</Text>
-                <Text style={styles.settingDesc}>Vision, team and roadmap</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>About HumanOS</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Vision, team and roadmap</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
 
             <Pressable
               onPress={() => handleRowPress('Terms & Conditions')}
-              style={({ pressed }) => [styles.settingRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              style={({ pressed }) => [styles.settingRow, { borderBottomColor: theme.colors.border }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>📜</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <FileText size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Terms & Conditions</Text>
-                <Text style={styles.settingDesc}>Service terms and usage rules</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Terms & Conditions</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>Service terms and usage rules</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
 
             <Pressable
               onPress={() => handleRowPress('Privacy Policy')}
               style={({ pressed }) => [styles.settingRow, { borderBottomWidth: 0 }, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
-              <View style={styles.settingIconWrap}>
-                <Text style={styles.settingIcon}>📄</Text>
+              <View style={[styles.settingIconWrap, { backgroundColor: theme.colors.cardAltBg }]}>
+                <ShieldCheck size={16} color="#6366F1" strokeWidth={2.2} />
               </View>
               <View style={styles.settingTexts}>
-                <Text style={styles.settingTitle}>Privacy Policy</Text>
-                <Text style={styles.settingDesc}>How your data is protected</Text>
+                <Text style={[styles.settingTitle, { color: theme.colors.textPrimary }]}>Privacy Policy</Text>
+                <Text style={[styles.settingDesc, { color: theme.colors.textSecondary }]}>How your data is protected</Text>
               </View>
-              <Text style={styles.chevron}>›</Text>
+              <ChevronRight size={16} color="#94A3B8" strokeWidth={2.2} />
             </Pressable>
           </View>
         </View>
@@ -858,19 +1024,23 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
             onPress={handleLogoutPress}
             style={({ pressed }) => [
               styles.logoutButton,
+              {
+                backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.15)' : '#FEF2F2',
+                borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.35)' : '#FEE2E2',
+              },
               isWeb && styles.webPointer,
               pressed && styles.logoutButtonPressed,
             ]}
           >
-            <Text style={styles.logoutIcon}>🚪</Text>
+            <LogOut size={16} color="#EF4444" strokeWidth={2.2} />
             <Text style={styles.logoutButtonText}>Log Out</Text>
           </Pressable>
         </View>
 
         {/* 10. APP INFORMATION */}
         <View style={styles.appInfoContainer}>
-          <Text style={styles.appInfoName}>HumanOS</Text>
-          <Text style={styles.appInfoVersion}>Version 1.0.0</Text>
+          <Text style={[styles.appInfoName, { color: theme.colors.textPrimary }]}>HumanOS</Text>
+          <Text style={[styles.appInfoVersion, { color: theme.colors.textMuted }]}>Version 1.0.0</Text>
         </View>
 
         {/* Extra spacing so bottom navigation doesn't hide content */}
@@ -888,22 +1058,22 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         onRequestClose={() => setEditProfileModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Edit Profile Information</Text>
+              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Edit Profile Information</Text>
               <Pressable
                 onPress={() => setEditProfileModalVisible(false)}
                 style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
               >
-                <Text style={styles.modalCloseButton}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Full Name</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Full Name</Text>
                 <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   value={tempName}
                   onChangeText={setTempName}
                   placeholder="Full Name"
@@ -912,9 +1082,9 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
 
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Email</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Email</Text>
                 <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   value={tempEmail}
                   onChangeText={setTempEmail}
                   keyboardType="email-address"
@@ -925,9 +1095,9 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
 
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Phone Number</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Phone Number</Text>
                 <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   value={tempPhone}
                   onChangeText={setTempPhone}
                   placeholder="Phone"
@@ -936,9 +1106,9 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
 
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Gender</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Gender</Text>
                 <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   value={tempGender}
                   onChangeText={setTempGender}
                   placeholder="Gender"
@@ -947,14 +1117,27 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
 
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Date of Birth</Text>
-                <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone]}
-                  value={tempDob}
-                  onChangeText={setTempDob}
-                  placeholder="Date of Birth"
-                  placeholderTextColor="#94A3B8"
-                />
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Date of Birth</Text>
+                <View style={styles.inputWithCalendarRow}>
+                  <TextInput
+                    style={[styles.modalInput, styles.inputFlex, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
+                    value={tempDob}
+                    onChangeText={setTempDob}
+                    placeholder="DD/MM/YYYY"
+                    placeholderTextColor="#94A3B8"
+                  />
+                  <Pressable
+                    onPress={() => setDatePickerVisible(true)}
+                    style={({ pressed }) => [
+                      styles.calendarTriggerBtn,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <Calendar size={18} color="#6366F1" strokeWidth={2.2} />
+                  </Pressable>
+                </View>
               </View>
 
               <View style={styles.modalActionRow}>
@@ -962,11 +1145,12 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                   onPress={() => setEditProfileModalVisible(false)}
                   style={({ pressed }) => [
                     styles.modalCancelBtn,
+                    { backgroundColor: theme.colors.cardAltBg },
                     isWeb && styles.webPointer,
                     pressed && styles.pressedOpacity,
                   ]}
                 >
-                  <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                  <Text style={[styles.modalCancelBtnText, { color: theme.colors.textSecondary }]}>Cancel</Text>
                 </Pressable>
 
                 <Pressable
@@ -993,21 +1177,98 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         onRequestClose={() => setPhotoPickerVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.photoPickerCard}>
-            <Text style={styles.photoPickerTitle}>Select Profile Avatar</Text>
-            <Text style={styles.photoPickerSubtitle}>Choose an avatar for your HumanOS profile</Text>
+          <View style={[styles.photoPickerCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            <View style={styles.photoPickerHeader}>
+              <Text style={[styles.photoPickerTitle, { color: theme.colors.textPrimary }]}>Profile Picture</Text>
+              <Pressable
+                onPress={() => setPhotoPickerVisible(false)}
+                style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+              >
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
+              </Pressable>
+            </View>
+            <Text style={[styles.photoPickerSubtitle, { color: theme.colors.textSecondary }]}>Upload your own photo or choose an avatar</Text>
+
+            {/* Current Avatar Preview */}
+            <View style={styles.photoPickerPreviewContainer}>
+              <View style={styles.photoPickerPreviewCircle}>
+                {isCustomImage(avatar) ? (
+                  <Image source={{ uri: avatar }} style={styles.avatarCustomImg} resizeMode="cover" />
+                ) : (
+                  <Text style={styles.avatarEmoji}>{avatar}</Text>
+                )}
+              </View>
+            </View>
+
+            {/* Custom Photo Upload Action Buttons */}
+            <View style={styles.photoUploadActionsRow}>
+              <Pressable
+                onPress={pickImageFromGallery}
+                style={({ pressed }) => [
+                  styles.uploadOptionBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Upload size={15} color="#FFFFFF" strokeWidth={2.4} />
+                <Text style={styles.uploadOptionBtnText}>Upload Photo</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={takePhotoWithCamera}
+                style={({ pressed }) => [
+                  styles.cameraOptionBtn,
+                  { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Camera size={15} color="#4F46E5" strokeWidth={2.4} />
+                <Text style={styles.cameraOptionBtnText}>Take Photo</Text>
+              </Pressable>
+            </View>
+
+            {/* Image URL Input */}
+            <View style={styles.customUrlContainer}>
+              <Text style={[styles.customUrlLabel, { color: theme.colors.textSecondary }]}>Or paste image URL:</Text>
+              <View style={styles.customUrlInputRow}>
+                <TextInput
+                  style={[styles.customUrlInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
+                  value={customImageUrl}
+                  onChangeText={setCustomImageUrl}
+                  placeholder="https://example.com/photo.jpg"
+                  placeholderTextColor="#94A3B8"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <Pressable
+                  onPress={handleApplyCustomUrl}
+                  style={({ pressed }) => [
+                    styles.customUrlApplyBtn,
+                    isWeb && styles.webPointer,
+                    pressed && styles.pressedOpacity,
+                  ]}
+                >
+                  <Text style={styles.customUrlApplyText}>Apply</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Preset Avatars Divider & Grid */}
+            <View style={styles.avatarSectionDivider}>
+              <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+              <Text style={[styles.dividerLabel, { color: theme.colors.textMuted }]}>Or choose preset avatar</Text>
+              <View style={[styles.dividerLine, { backgroundColor: theme.colors.border }]} />
+            </View>
 
             <View style={styles.avatarGrid}>
               {avatarOptions.map((item) => (
                 <Pressable
                   key={item}
-                  onPress={() => {
-                    setAvatar(item);
-                    setPhotoPickerVisible(false);
-                    showNotice(`Avatar updated to ${item}`);
-                  }}
+                  onPress={() => updateAvatarAndSave(item)}
                   style={({ pressed }) => [
                     styles.avatarOptionItem,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                     avatar === item && styles.avatarOptionItemActive,
                     isWeb && styles.webPointer,
                     pressed && styles.pressedOpacity,
@@ -1022,15 +1283,25 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               onPress={() => setPhotoPickerVisible(false)}
               style={({ pressed }) => [
                 styles.photoPickerCloseBtn,
+                { backgroundColor: theme.colors.cardAltBg },
                 isWeb && styles.webPointer,
                 pressed && styles.pressedOpacity,
               ]}
             >
-              <Text style={styles.photoPickerCloseText}>Close</Text>
+              <Text style={[styles.photoPickerCloseText, { color: theme.colors.textPrimary }]}>Done</Text>
             </Pressable>
           </View>
         </View>
       </Modal>
+
+      {/* DATE PICKER MODAL */}
+      <DatePickerModal
+        visible={datePickerVisible}
+        onClose={() => setDatePickerVisible(false)}
+        onSelectDate={(dateStr) => setTempDob(dateStr)}
+        initialDate={tempDob}
+        title="Select Date of Birth"
+      />
 
       {/* SECURITY CENTER MODAL */}
       <Modal
@@ -1040,37 +1311,37 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         onRequestClose={() => setSecurityModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalKicker}>AUTHENTICATION & PRIVACY</Text>
-                <Text style={styles.modalTitle}>Security Center</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Security Center</Text>
               </View>
               <Pressable
                 onPress={() => setSecurityModalVisible(false)}
                 style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
               >
-                <Text style={styles.modalCloseButton}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               {/* Quick Security Status */}
-              <View style={styles.securityStatusBanner}>
-                <Text style={styles.securityStatusIcon}>🛡️</Text>
+              <View style={[styles.securityStatusBanner, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF', borderColor: theme.colors.border }]}>
+                <ShieldCheck size={20} color="#6366F1" strokeWidth={2.2} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.securityStatusHeading}>Security Rating: 98% (Strong)</Text>
-                  <Text style={styles.securityStatusSub}>
+                  <Text style={[styles.securityStatusHeading, { color: theme.colors.textPrimary }]}>Security Rating: 98% (Strong)</Text>
+                  <Text style={[styles.securityStatusSub, { color: theme.colors.textSecondary }]}>
                     Biometrics active • Encryption enabled
                   </Text>
                 </View>
               </View>
 
               {/* Password Management */}
-              <View style={styles.modalSectionBlock}>
-                <Text style={styles.modalSectionHeading}>Change Master Password</Text>
+              <View style={[styles.modalSectionBlock, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.modalSectionHeading, { color: theme.colors.textPrimary }]}>Change Master Password</Text>
                 <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone, { marginBottom: 8 }]}
+                  style={[styles.modalInput, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone, { marginBottom: 8 }]}
                   placeholder="Current Password"
                   placeholderTextColor="#94A3B8"
                   secureTextEntry
@@ -1078,7 +1349,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                   onChangeText={setCurrentPassword}
                 />
                 <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone, { marginBottom: 8 }]}
+                  style={[styles.modalInput, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone, { marginBottom: 8 }]}
                   placeholder="New Password"
                   placeholderTextColor="#94A3B8"
                   secureTextEntry
@@ -1086,7 +1357,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                   onChangeText={setNewPassword}
                 />
                 <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone, { marginBottom: 12 }]}
+                  style={[styles.modalInput, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone, { marginBottom: 12 }]}
                   placeholder="Confirm New Password"
                   placeholderTextColor="#94A3B8"
                   secureTextEntry
@@ -1106,13 +1377,13 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
 
               {/* Toggles */}
-              <View style={styles.modalSectionBlock}>
-                <Text style={styles.modalSectionHeading}>Access Controls</Text>
+              <View style={[styles.modalSectionBlock, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.modalSectionHeading, { color: theme.colors.textPrimary }]}>Access Controls</Text>
 
-                <View style={styles.modalToggleRow}>
+                <View style={[styles.modalToggleRow, { borderBottomColor: theme.colors.border }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.modalToggleTitle}>Biometric Authentication</Text>
-                    <Text style={styles.modalToggleSub}>FaceID / Fingerprint login</Text>
+                    <Text style={[styles.modalToggleTitle, { color: theme.colors.textPrimary }]}>Biometric Authentication</Text>
+                    <Text style={[styles.modalToggleSub, { color: theme.colors.textSecondary }]}>FaceID / Fingerprint login</Text>
                   </View>
                   <Switch
                     value={biometricsEnabled}
@@ -1127,8 +1398,8 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
 
                 <View style={[styles.modalToggleRow, { borderBottomWidth: 0 }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.modalToggleTitle}>Two-Factor Authentication</Text>
-                    <Text style={styles.modalToggleSub}>SMS or Authenticator App</Text>
+                    <Text style={[styles.modalToggleTitle, { color: theme.colors.textPrimary }]}>Two-Factor Authentication</Text>
+                    <Text style={[styles.modalToggleSub, { color: theme.colors.textSecondary }]}>SMS or Authenticator App</Text>
                   </View>
                   <Switch
                     value={twoFactorEnabled}
@@ -1167,45 +1438,46 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         onRequestClose={() => setSettingsModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalKicker}>SYSTEM CONFIGURATION</Text>
-                <Text style={styles.modalTitle}>Preferences & Settings</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Preferences & Settings</Text>
               </View>
               <Pressable
                 onPress={() => setSettingsModalVisible(false)}
                 style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
               >
-                <Text style={styles.modalCloseButton}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               {/* Preferences Toggles */}
-              <View style={styles.modalSectionBlock}>
-                <Text style={styles.modalSectionHeading}>System Defaults</Text>
+              <View style={[styles.modalSectionBlock, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.modalSectionHeading, { color: theme.colors.textPrimary }]}>System Defaults</Text>
 
-                <View style={styles.modalToggleRow}>
+                <View style={[styles.modalToggleRow, { borderBottomColor: theme.colors.border }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.modalToggleTitle}>Dark Mode</Text>
-                    <Text style={styles.modalToggleSub}>Obsidian executive theme</Text>
+                    <Text style={[styles.modalToggleTitle, { color: theme.colors.textPrimary }]}>
+                      {isDarkMode ? 'Dark Mode' : 'Light Mode'}
+                    </Text>
+                    <Text style={[styles.modalToggleSub, { color: theme.colors.textSecondary }]}>
+                      {isDarkMode ? 'Obsidian executive dark theme' : 'Clean Daylight light theme'}
+                    </Text>
                   </View>
                   <Switch
-                    value={darkMode}
-                    onValueChange={(val) => {
-                      setDarkMode(val);
-                      showNotice(val ? 'Dark mode enabled' : 'Light mode enabled');
-                    }}
+                    value={isDarkMode}
+                    onValueChange={handleToggleDarkMode}
                     trackColor={{ false: '#CBD5E1', true: '#4F46E5' }}
-                    thumbColor={darkMode ? '#818CF8' : '#FFFFFF'}
+                    thumbColor={isDarkMode ? '#818CF8' : '#FFFFFF'}
                   />
                 </View>
 
-                <View style={styles.modalToggleRow}>
+                <View style={[styles.modalToggleRow, { borderBottomColor: theme.colors.border }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.modalToggleTitle}>Push Notifications</Text>
-                    <Text style={styles.modalToggleSub}>Daily check-ins and habit reminders</Text>
+                    <Text style={[styles.modalToggleTitle, { color: theme.colors.textPrimary }]}>Push Notifications</Text>
+                    <Text style={[styles.modalToggleSub, { color: theme.colors.textSecondary }]}>Daily check-ins and habit reminders</Text>
                   </View>
                   <Switch
                     value={pushNotifications}
@@ -1220,8 +1492,8 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
 
                 <View style={[styles.modalToggleRow, { borderBottomWidth: 0 }]}>
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.modalToggleTitle}>AI Personalization</Text>
-                    <Text style={styles.modalToggleSub}>Adaptive telemetry recommendations</Text>
+                    <Text style={[styles.modalToggleTitle, { color: theme.colors.textPrimary }]}>AI Personalization</Text>
+                    <Text style={[styles.modalToggleSub, { color: theme.colors.textSecondary }]}>Adaptive telemetry recommendations</Text>
                   </View>
                   <Switch
                     value={aiPersonalization}
@@ -1236,14 +1508,14 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
 
               {/* Locale Settings */}
-              <View style={styles.modalSectionBlock}>
-                <Text style={styles.modalSectionHeading}>Regional & Schedule</Text>
+              <View style={[styles.modalSectionBlock, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.modalSectionHeading, { color: theme.colors.textPrimary }]}>Regional & Schedule</Text>
 
                 <Pressable
                   onPress={cycleLanguage}
-                  style={styles.modalSelectRow}
+                  style={[styles.modalSelectRow, { borderBottomColor: theme.colors.border }]}
                 >
-                  <Text style={styles.modalSelectLabel}>Language</Text>
+                  <Text style={[styles.modalSelectLabel, { color: theme.colors.textPrimary }]}>Language</Text>
                   <Text style={styles.modalSelectValue}>{language} ›</Text>
                 </Pressable>
 
@@ -1253,9 +1525,9 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                     setStartOfWeek(next);
                     showNotice(`Start of Week: ${next}`);
                   }}
-                  style={styles.modalSelectRow}
+                  style={[styles.modalSelectRow, { borderBottomColor: theme.colors.border }]}
                 >
-                  <Text style={styles.modalSelectLabel}>Start of Week</Text>
+                  <Text style={[styles.modalSelectLabel, { color: theme.colors.textPrimary }]}>Start of Week</Text>
                   <Text style={styles.modalSelectValue}>{startOfWeek} ›</Text>
                 </Pressable>
 
@@ -1267,7 +1539,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                   }}
                   style={[styles.modalSelectRow, { borderBottomWidth: 0 }]}
                 >
-                  <Text style={styles.modalSelectLabel}>Daily Check-in Time</Text>
+                  <Text style={[styles.modalSelectLabel, { color: theme.colors.textPrimary }]}>Daily Check-in Time</Text>
                   <Text style={styles.modalSelectValue}>{reminderTime} ›</Text>
                 </Pressable>
               </View>
@@ -1297,26 +1569,26 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         onRequestClose={() => setHelpCenterModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalKicker}>KNOWLEDGE BASE & GUIDES</Text>
-                <Text style={styles.modalTitle}>Help Center</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Help Center</Text>
               </View>
               <Pressable
                 onPress={() => setHelpCenterModalVisible(false)}
                 style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
               >
-                <Text style={styles.modalCloseButton}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               {/* Search Bar */}
-              <View style={styles.searchBarContainer}>
-                <Text style={styles.searchIcon}>🔍</Text>
+              <View style={[styles.searchBarContainer, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Search size={14} color="#94A3B8" strokeWidth={2.2} />
                 <TextInput
-                  style={[styles.searchInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.searchInput, { color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   placeholder="Search questions or topics..."
                   placeholderTextColor="#94A3B8"
                   value={faqSearchQuery}
@@ -1324,7 +1596,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                 />
                 {faqSearchQuery.length > 0 && (
                   <Pressable onPress={() => setFaqSearchQuery('')} style={({ pressed }) => [pressed && styles.pressedOpacity]}>
-                    <Text style={styles.clearSearchText}>✕</Text>
+                    <X size={14} color="#94A3B8" strokeWidth={2.2} />
                   </Pressable>
                 )}
               </View>
@@ -1338,6 +1610,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                       onPress={() => setSelectedFaqCategory(cat)}
                       style={[
                         styles.faqCategoryPill,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                         selectedFaqCategory === cat && styles.faqCategoryPillActive,
                         isWeb && styles.webPointer,
                       ]}
@@ -1345,6 +1618,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                       <Text
                         style={[
                           styles.faqCategoryPillText,
+                          { color: theme.colors.textSecondary },
                           selectedFaqCategory === cat && styles.faqCategoryPillTextActive,
                         ]}
                       >
@@ -1374,21 +1648,26 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                         onPress={() => setExpandedFaqIndex(isExpanded ? null : index)}
                         style={({ pressed }) => [
                           styles.faqCard,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                           isExpanded && styles.faqCardActive,
                           isWeb && styles.webPointer,
                           pressed && styles.pressedOpacity,
                         ]}
                       >
                         <View style={styles.faqCardHeader}>
-                          <View style={styles.faqCategoryBadge}>
+                          <View style={[styles.faqCategoryBadge, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF' }]}>
                             <Text style={styles.faqCategoryBadgeText}>{item.category.toUpperCase()}</Text>
                           </View>
-                          <Text style={styles.faqQuestion}>{item.question}</Text>
-                          <Text style={styles.faqChevron}>{isExpanded ? '▲' : '▼'}</Text>
+                          <Text style={[styles.faqQuestion, { color: theme.colors.textPrimary }]}>{item.question}</Text>
+                          {isExpanded ? (
+                            <ChevronUp size={14} color="#94A3B8" strokeWidth={2.2} />
+                          ) : (
+                            <ChevronDown size={14} color="#94A3B8" strokeWidth={2.2} />
+                          )}
                         </View>
                         {isExpanded && (
-                          <View style={styles.faqAnswerContainer}>
-                            <Text style={styles.faqAnswerText}>{item.answer}</Text>
+                          <View style={[styles.faqAnswerContainer, { borderTopColor: theme.colors.border }]}>
+                            <Text style={[styles.faqAnswerText, { color: theme.colors.textSecondary }]}>{item.answer}</Text>
                           </View>
                         )}
                       </Pressable>
@@ -1397,11 +1676,11 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
 
               {/* Need Live Help Card */}
-              <View style={styles.supportPromoCard}>
-                <Text style={styles.supportPromoIcon}>💬</Text>
+              <View style={[styles.supportPromoCard, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF', borderColor: theme.colors.border }]}>
+                <MessageSquare size={20} color="#6366F1" strokeWidth={2.2} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.supportPromoTitle}>Can't find what you need?</Text>
-                  <Text style={styles.supportPromoSub}>Our technical support team is standing by 24/7.</Text>
+                  <Text style={[styles.supportPromoTitle, { color: theme.colors.textPrimary }]}>Can't find what you need?</Text>
+                  <Text style={[styles.supportPromoSub, { color: theme.colors.textSecondary }]}>Our technical support team is standing by 24/7.</Text>
                 </View>
                 <Pressable
                   onPress={() => {
@@ -1443,32 +1722,32 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         onRequestClose={() => setContactSupportModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalKicker}>HUMANOS HELP DESK</Text>
-                <Text style={styles.modalTitle}>Contact Support</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Contact Support</Text>
               </View>
               <Pressable
                 onPress={() => setContactSupportModalVisible(false)}
                 style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
               >
-                <Text style={styles.modalCloseButton}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-              <View style={styles.supportHeaderBanner}>
-                <Text style={styles.supportHeaderIcon}>🎧</Text>
+              <View style={[styles.supportHeaderBanner, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF', borderColor: theme.colors.border }]}>
+                <Headphones size={20} color="#6366F1" strokeWidth={2.2} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.supportHeaderTitle}>Dedicated Priority Support</Text>
-                  <Text style={styles.supportHeaderSub}>Typical response time: under 2 hours</Text>
+                  <Text style={[styles.supportHeaderTitle, { color: theme.colors.textPrimary }]}>Dedicated Priority Support</Text>
+                  <Text style={[styles.supportHeaderSub, { color: theme.colors.textSecondary }]}>Typical response time: under 2 hours</Text>
                 </View>
               </View>
 
               {/* Category Selector */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Issue Category</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Issue Category</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                   <View style={{ flexDirection: 'row', gap: 8, paddingVertical: 4 }}>
                     {supportCategories.map((cat) => (
@@ -1477,6 +1756,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                         onPress={() => setSupportCategory(cat)}
                         style={[
                           styles.catPill,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                           supportCategory === cat && styles.catPillActive,
                           isWeb && styles.webPointer,
                         ]}
@@ -1484,6 +1764,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                         <Text
                           style={[
                             styles.catPillText,
+                            { color: theme.colors.textSecondary },
                             supportCategory === cat && styles.catPillTextActive,
                           ]}
                         >
@@ -1497,9 +1778,9 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
 
               {/* Subject */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Subject</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Subject</Text>
                 <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   placeholder="Brief summary of your question or issue"
                   placeholderTextColor="#94A3B8"
                   value={supportSubject}
@@ -1509,10 +1790,11 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
 
               {/* Message */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Message / Description</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Message / Description</Text>
                 <TextInput
                   style={[
                     styles.modalInput,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
                     { height: 100, textAlignVertical: 'top', paddingTop: 10 },
                     isWeb && styles.webOutlineNone,
                   ]}
@@ -1526,9 +1808,10 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
               </View>
 
               {/* Email direct line info */}
-              <View style={styles.supportDirectInfo}>
-                <Text style={styles.supportDirectInfoText}>
-                  ✉️ Direct Email:{' '}
+              <View style={[styles.supportDirectInfo, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Mail size={13} color="#4F46E5" strokeWidth={2.2} />
+                <Text style={[styles.supportDirectInfoText, { color: theme.colors.textSecondary }]}>
+                  Direct Email:{' '}
                   <Text style={{ fontWeight: '700', color: '#4F46E5' }}>support@humanos.app</Text>
                 </Text>
               </View>
@@ -1539,11 +1822,12 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                 onPress={() => setContactSupportModalVisible(false)}
                 style={({ pressed }) => [
                   styles.modalCancelBtn,
+                  { backgroundColor: theme.colors.cardAltBg },
                   isWeb && styles.webPointer,
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.modalCancelBtnText}>Cancel</Text>
+                <Text style={[styles.modalCancelBtnText, { color: theme.colors.textSecondary }]}>Cancel</Text>
               </Pressable>
 
               <Pressable
@@ -1554,7 +1838,8 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                   pressed && styles.buttonPressed,
                 ]}
               >
-                <Text style={styles.modalSaveBtnText}>Submit Ticket ↗</Text>
+                <Text style={styles.modalSaveBtnText}>Submit Ticket</Text>
+                <ArrowUpRight size={14} color="#FFFFFF" strokeWidth={2.2} />
               </Pressable>
             </View>
           </View>
@@ -1569,62 +1854,62 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         onRequestClose={() => setAboutModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalKicker}>MISSION & VISION</Text>
-                <Text style={styles.modalTitle}>About HumanOS</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>About HumanOS</Text>
               </View>
               <Pressable
                 onPress={() => setAboutModalVisible(false)}
                 style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
               >
-                <Text style={styles.modalCloseButton}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               {/* Brand Center */}
               <View style={styles.aboutHeroBlock}>
-                <View style={styles.aboutLogoWrap}>
+                <View style={[styles.aboutLogoWrap, { backgroundColor: theme.colors.cardAltBg }]}>
                   <Text style={styles.aboutLogoEmoji}>🌱</Text>
                 </View>
-                <Text style={styles.aboutBrandTitle}>HumanOS</Text>
-                <Text style={styles.aboutVersionBadge}>v1.0.0 Pro • Obsidian Edition</Text>
-                <Text style={styles.aboutTagline}>
+                <Text style={[styles.aboutBrandTitle, { color: theme.colors.textPrimary }]}>HumanOS</Text>
+                <Text style={[styles.aboutVersionBadge, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF', color: isDarkMode ? '#C7D2FE' : '#4F46E5' }]}>v1.0.0 Pro • Obsidian Edition</Text>
+                <Text style={[styles.aboutTagline, { color: theme.colors.textSecondary }]}>
                   The personal operating system engineered to elevate human cognitive focus, metabolic vitality, and execution velocity.
                 </Text>
               </View>
 
               {/* Core Philosophy Cards */}
-              <View style={styles.modalSectionBlock}>
-                <Text style={styles.modalSectionHeading}>Core Principles</Text>
+              <View style={[styles.modalSectionBlock, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.modalSectionHeading, { color: theme.colors.textPrimary }]}>Core Principles</Text>
 
-                <View style={styles.aboutPillarRow}>
-                  <Text style={styles.aboutPillarIcon}>🧠</Text>
+                <View style={[styles.aboutPillarRow, { borderBottomColor: theme.colors.border }]}>
+                  <Sparkles size={18} color="#9333EA" strokeWidth={2.2} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.aboutPillarTitle}>Cognitive Harmony</Text>
-                    <Text style={styles.aboutPillarDesc}>
+                    <Text style={[styles.aboutPillarTitle, { color: theme.colors.textPrimary }]}>Cognitive Harmony</Text>
+                    <Text style={[styles.aboutPillarDesc, { color: theme.colors.textSecondary }]}>
                       Task prioritization designed around circadian rhythm cycles and peak mental clarity.
                     </Text>
                   </View>
                 </View>
 
-                <View style={styles.aboutPillarRow}>
-                  <Text style={styles.aboutPillarIcon}>♡</Text>
+                <View style={[styles.aboutPillarRow, { borderBottomColor: theme.colors.border }]}>
+                  <HeartPulse size={18} color="#0284C7" strokeWidth={2.2} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.aboutPillarTitle}>Biological Telemetry</Text>
-                    <Text style={styles.aboutPillarDesc}>
+                    <Text style={[styles.aboutPillarTitle, { color: theme.colors.textPrimary }]}>Biological Telemetry</Text>
+                    <Text style={[styles.aboutPillarDesc, { color: theme.colors.textSecondary }]}>
                       Real-time biometric tracking to maintain sustained high energy without burnout.
                     </Text>
                   </View>
                 </View>
 
                 <View style={[styles.aboutPillarRow, { borderBottomWidth: 0 }]}>
-                  <Text style={styles.aboutPillarIcon}>🛡️</Text>
+                  <ShieldCheck size={18} color="#6366F1" strokeWidth={2.2} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.aboutPillarTitle}>Zero-Compromise Privacy</Text>
-                    <Text style={styles.aboutPillarDesc}>
+                    <Text style={[styles.aboutPillarTitle, { color: theme.colors.textPrimary }]}>Zero-Compromise Privacy</Text>
+                    <Text style={[styles.aboutPillarDesc, { color: theme.colors.textSecondary }]}>
                       Hardware-backed encryption and total personal data sovereignty.
                     </Text>
                   </View>
@@ -1633,8 +1918,8 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
 
               {/* Build Meta */}
               <View style={styles.aboutMetaRow}>
-                <Text style={styles.aboutMetaText}>Designed for high performance individuals worldwide.</Text>
-                <Text style={styles.aboutMetaCopyright}>© 2026 HumanOS Technologies, Inc. All rights reserved.</Text>
+                <Text style={[styles.aboutMetaText, { color: theme.colors.textSecondary }]}>Designed for high performance individuals worldwide.</Text>
+                <Text style={[styles.aboutMetaCopyright, { color: theme.colors.textMuted }]}>© 2026 HumanOS Technologies, Inc. All rights reserved.</Text>
               </View>
             </ScrollView>
 
@@ -1662,61 +1947,61 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         onRequestClose={() => setTermsModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalKicker}>LEGAL & POLICIES</Text>
-                <Text style={styles.modalTitle}>Terms & Conditions</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Terms & Conditions</Text>
               </View>
               <Pressable
                 onPress={() => setTermsModalVisible(false)}
                 style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
               >
-                <Text style={styles.modalCloseButton}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-              <Text style={styles.legalEffectiveDate}>Effective Date: August 2026 • Version 2.1</Text>
+              <Text style={[styles.legalEffectiveDate, { backgroundColor: theme.colors.cardAltBg, color: theme.colors.textSecondary }]}>Effective Date: August 2026 • Version 2.1</Text>
 
-              <View style={styles.legalSection}>
-                <Text style={styles.legalSectionTitle}>1. Acceptance of Terms</Text>
-                <Text style={styles.legalParagraph}>
+              <View style={[styles.legalSection, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.legalSectionTitle, { color: theme.colors.textPrimary }]}>1. Acceptance of Terms</Text>
+                <Text style={[styles.legalParagraph, { color: theme.colors.textSecondary }]}>
                   By creating an account or accessing HumanOS services, you acknowledge that you have read, understood, and agree to be legally bound by these Terms of Service. If you do not agree with any portion, you must discontinue use immediately.
                 </Text>
               </View>
 
-              <View style={styles.legalSection}>
-                <Text style={styles.legalSectionTitle}>2. Health & Wellness Disclaimer</Text>
-                <Text style={styles.legalParagraph}>
+              <View style={[styles.legalSection, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.legalSectionTitle, { color: theme.colors.textPrimary }]}>2. Health & Wellness Disclaimer</Text>
+                <Text style={[styles.legalParagraph, { color: theme.colors.textSecondary }]}>
                   HumanOS provides lifestyle tracking, cognitive routine optimization, and productivity telemetry. HumanOS is not a licensed medical provider. The software does not diagnose, treat, or prevent any illness or condition. Always seek professional advice from qualified healthcare providers.
                 </Text>
               </View>
 
-              <View style={styles.legalSection}>
-                <Text style={styles.legalSectionTitle}>3. User Account & Data Security</Text>
-                <Text style={styles.legalParagraph}>
+              <View style={[styles.legalSection, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.legalSectionTitle, { color: theme.colors.textPrimary }]}>3. User Account & Data Security</Text>
+                <Text style={[styles.legalParagraph, { color: theme.colors.textSecondary }]}>
                   You are responsible for maintaining the confidentiality of your authentication credentials. You agree to notify HumanOS immediately upon discovering any unauthorized breach or suspicious activity regarding your account.
                 </Text>
               </View>
 
-              <View style={styles.legalSection}>
-                <Text style={styles.legalSectionTitle}>4. Subscriptions & Pro Services</Text>
-                <Text style={styles.legalParagraph}>
+              <View style={[styles.legalSection, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.legalSectionTitle, { color: theme.colors.textPrimary }]}>4. Subscriptions & Pro Services</Text>
+                <Text style={[styles.legalParagraph, { color: theme.colors.textSecondary }]}>
                   Certain advanced modules (such as AI Telemetry Coaching and biometric deep analytics) may require an active Pro subscription. Subscriptions automatically renew unless cancelled at least 24 hours prior to the billing cycle end.
                 </Text>
               </View>
 
-              <View style={styles.legalSection}>
-                <Text style={styles.legalSectionTitle}>5. Intellectual Property & License</Text>
-                <Text style={styles.legalParagraph}>
+              <View style={[styles.legalSection, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.legalSectionTitle, { color: theme.colors.textPrimary }]}>5. Intellectual Property & License</Text>
+                <Text style={[styles.legalParagraph, { color: theme.colors.textSecondary }]}>
                   HumanOS and its original content, features, and functionality remain the exclusive property of HumanOS Technologies, Inc. You are granted a limited, personal, non-exclusive license to use the app for individual purposes.
                 </Text>
               </View>
 
-              <View style={styles.legalSection}>
-                <Text style={styles.legalSectionTitle}>6. Termination & Inquiries</Text>
-                <Text style={styles.legalParagraph}>
+              <View style={[styles.legalSection, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.legalSectionTitle, { color: theme.colors.textPrimary }]}>6. Termination & Inquiries</Text>
+                <Text style={[styles.legalParagraph, { color: theme.colors.textSecondary }]}>
                   We may terminate or suspend access to our service immediately, without prior notice, for conduct that violates these Terms. For legal inquiries, contact legal@humanos.app.
                 </Text>
               </View>
@@ -1749,50 +2034,50 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         onRequestClose={() => setPrivacyModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalKicker}>PRIVACY & DATA SOVEREIGNTY</Text>
-                <Text style={styles.modalTitle}>Privacy Policy</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Privacy Policy</Text>
               </View>
               <Pressable
                 onPress={() => setPrivacyModalVisible(false)}
                 style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
               >
-                <Text style={styles.modalCloseButton}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
-              <View style={styles.privacyTrustBanner}>
-                <Text style={styles.privacyTrustIcon}>🔒</Text>
+              <View style={[styles.privacyTrustBanner, { backgroundColor: isDarkMode ? 'rgba(5, 150, 105, 0.15)' : '#ECFDF5', borderColor: isDarkMode ? 'rgba(5, 150, 105, 0.3)' : '#A7F3D0' }]}>
+                <Lock size={20} color="#059669" strokeWidth={2.2} />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.privacyTrustTitle}>Zero-Ad Data Architecture</Text>
-                  <Text style={styles.privacyTrustSub}>Your personal metrics are never sold or monetized.</Text>
+                  <Text style={[styles.privacyTrustTitle, { color: isDarkMode ? '#6EE7B7' : '#065F46' }]}>Zero-Ad Data Architecture</Text>
+                  <Text style={[styles.privacyTrustSub, { color: isDarkMode ? '#A7F3D0' : '#047857' }]}>Your personal metrics are never sold or monetized.</Text>
                 </View>
               </View>
 
-              <Text style={styles.legalEffectiveDate}>Effective Date: August 2026 • GDPR & CCPA Compliant</Text>
+              <Text style={[styles.legalEffectiveDate, { backgroundColor: theme.colors.cardAltBg, color: theme.colors.textSecondary }]}>Effective Date: August 2026 • GDPR & CCPA Compliant</Text>
 
-              <View style={styles.legalSection}>
-                <Text style={styles.legalSectionTitle}>1. Information We Collect</Text>
-                <Text style={styles.legalParagraph}>
+              <View style={[styles.legalSection, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.legalSectionTitle, { color: theme.colors.textPrimary }]}>1. Information We Collect</Text>
+                <Text style={[styles.legalParagraph, { color: theme.colors.textSecondary }]}>
                   • Account details: Full name, verified email, and profile preferences.{'\n'}
                   • Daily logs: Tasks completed, habit streak tracking, and daily focus logs.{'\n'}
                   • Telemetry: Voluntary metrics such as resting heart rate, sleep duration, and active minutes.
                 </Text>
               </View>
 
-              <View style={styles.legalSection}>
-                <Text style={styles.legalSectionTitle}>2. Military-Grade Data Encryption</Text>
-                <Text style={styles.legalParagraph}>
+              <View style={[styles.legalSection, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.legalSectionTitle, { color: theme.colors.textPrimary }]}>2. Military-Grade Data Encryption</Text>
+                <Text style={[styles.legalParagraph, { color: theme.colors.textSecondary }]}>
                   All biometric and personal data is encrypted at rest using AES-256 and transmitted exclusively via authenticated TLS 1.3 tunnels. Encryption keys remain segregated from raw user identities.
                 </Text>
               </View>
 
-              <View style={styles.legalSection}>
-                <Text style={styles.legalSectionTitle}>3. AI Processing & Zero Retention</Text>
-                <Text style={styles.legalParagraph}>
+              <View style={[styles.legalSection, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Text style={[styles.legalSectionTitle, { color: theme.colors.textPrimary }]}>3. AI Processing & Zero Retention</Text>
+                <Text style={[styles.legalParagraph, { color: theme.colors.textSecondary }]}>
                   When using AI Personalization, contextual telemetry prompts are evaluated in transient memory sessions. We do not use your private logs to train public language models without your consent.
                 </Text>
               </View>
@@ -1824,7 +2109,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.modalDoneBtnText}>Understood</Text>
+                <Text style={styles.modalDoneBtnText}>Done</Text>
               </Pressable>
             </View>
           </View>
@@ -1834,11 +2119,13 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A0E1A" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.appBg }]} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle={theme.colors.statusBarStyle} backgroundColor={theme.colors.appBg} />
       {isDesktop ? (
-        <View style={styles.desktopOuterContainer}>
-          <View style={styles.desktopShell}>{appContent}</View>
+        <View style={[styles.desktopOuterContainer, { backgroundColor: theme.colors.desktopBg }]}>
+          <View style={[styles.desktopShell, { backgroundColor: theme.colors.appBg, borderColor: theme.colors.borderDark }]}>
+            {appContent}
+          </View>
         </View>
       ) : (
         appContent
@@ -1882,11 +2169,9 @@ const styles = StyleSheet.create({
   },
   scrollContainer: {
     flex: 1,
-    backgroundColor: '#0A0E1A',
   },
   scrollContentContainer: {
     flexGrow: 1,
-    backgroundColor: '#F8FAFC',
     paddingBottom: 24,
   },
 
@@ -1999,6 +2284,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 14,
     alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: '#1E1B4B',
     borderWidth: 1,
     borderColor: '#6366F1',
@@ -2095,6 +2383,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   verifiedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
     backgroundColor: '#EEF2FF',
     paddingHorizontal: 6,
     paddingVertical: 2,
@@ -2172,6 +2463,8 @@ const styles = StyleSheet.create({
   },
   editProfileButton: {
     flex: 1.2,
+    flexDirection: 'row',
+    gap: 6,
     backgroundColor: '#4F46E5',
     paddingVertical: 10,
     borderRadius: 12,
@@ -2596,46 +2889,190 @@ const styles = StyleSheet.create({
   },
   modalSaveBtn: {
     flex: 1.3,
+    flexDirection: 'row',
+    gap: 6,
     backgroundColor: '#4F46E5',
     paddingVertical: 12,
     borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
   },
   modalSaveBtnText: {
     color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '700',
   },
+  inputWithCalendarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inputFlex: {
+    flex: 1,
+  },
+  calendarTriggerBtn: {
+    backgroundColor: '#EEF2FF',
+    padding: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarCustomImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 34,
+  },
   photoPickerCard: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 380,
     backgroundColor: '#FFFFFF',
     borderRadius: 24,
     padding: 20,
     alignItems: 'center',
   },
+  photoPickerHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 4,
+  },
   photoPickerTitle: {
     color: '#0F172A',
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '800',
   },
   photoPickerSubtitle: {
     color: '#64748B',
     fontSize: 12,
-    marginBottom: 16,
+    marginBottom: 12,
     textAlign: 'center',
+  },
+  photoPickerPreviewContainer: {
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  photoPickerPreviewCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: '#0F172A',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#818CF8',
+    overflow: 'hidden',
+  },
+  photoUploadActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    width: '100%',
+    marginBottom: 12,
+  },
+  uploadOptionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#4F46E5',
+    paddingVertical: 11,
+    borderRadius: 12,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  uploadOptionBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  cameraOptionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#EEF2FF',
+    paddingVertical: 11,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  cameraOptionBtnText: {
+    color: '#4F46E5',
+    fontSize: 12.5,
+    fontWeight: '700',
+  },
+  customUrlContainer: {
+    width: '100%',
+    marginBottom: 12,
+  },
+  customUrlLabel: {
+    color: '#64748B',
+    fontSize: 11.5,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  customUrlInputRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  customUrlInput: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 12,
+    color: '#0F172A',
+  },
+  customUrlApplyBtn: {
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  customUrlApplyText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  avatarSectionDivider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    width: '100%',
+    marginVertical: 8,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  dividerLabel: {
+    color: '#94A3B8',
+    fontSize: 11,
+    fontWeight: '600',
+    marginHorizontal: 8,
   },
   avatarGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    gap: 12,
-    marginBottom: 18,
+    gap: 10,
+    marginBottom: 14,
   },
   avatarOptionItem: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: '#F8FAFC',
     borderWidth: 1.5,
     borderColor: '#E2E8F0',
@@ -2647,13 +3084,15 @@ const styles = StyleSheet.create({
     backgroundColor: '#EEF2FF',
   },
   avatarOptionEmoji: {
-    fontSize: 26,
+    fontSize: 22,
   },
   photoPickerCloseBtn: {
     backgroundColor: '#F1F5F9',
-    paddingHorizontal: 24,
-    paddingVertical: 10,
+    width: '100%',
+    paddingVertical: 11,
     borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   photoPickerCloseText: {
     color: '#475569',

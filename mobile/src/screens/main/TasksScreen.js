@@ -15,12 +15,37 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Search,
+  X,
+  Bell,
+  CalendarDays,
+  Check,
+  Sparkles,
+  Clock,
+  MoreVertical,
+  Plus,
+  Pencil,
+  Zap,
+  Trash2,
+  Calendar,
+} from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
+import { useTheme } from '../../contexts/ThemeContext';
+import {
+  createTask,
+  fetchTasks,
+  updateTask,
+  deleteTask,
+  toggleTaskComplete,
+} from '../../services/api';
+import { getToken } from '../../services/storage';
 
 export default function TasksScreen({ user, onLogout, onNavigateTab, navigation }) {
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktop = isWeb && width >= 768;
+  const { theme, isDarkMode } = useTheme();
 
   // Active Tab for navigation
   const [activeTab, setActiveTab] = useState('tasks');
@@ -55,13 +80,32 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   const [taskReminder, setTaskReminder] = useState(true);
   const [titleError, setTitleError] = useState('');
 
-  // Tasks state (dynamically bound to database user)
+  // Tasks state (dynamically bound to backend API and database user)
   const [tasks, setTasks] = useState(user?.tasks || []);
+  const [loadingTasks, setLoadingTasks] = useState(false);
 
-  // Sync state whenever user data changes from database
+  // Fetch tasks from backend for authenticated user
+  const loadTasks = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetchTasks({}, token);
+      if (res && res.success && Array.isArray(res.tasks)) {
+        setTasks(res.tasks);
+      }
+    } catch (err) {
+      console.log('[HumanOS Tasks] Error loading tasks:', err.message);
+    }
+  };
+
+  // Initial load and sync on mount / user change
   React.useEffect(() => {
-    if (user && user.tasks) {
-      setTasks(user.tasks || []);
+    loadTasks();
+  }, []);
+
+  React.useEffect(() => {
+    if (user && Array.isArray(user.tasks) && user.tasks.length > 0 && tasks.length === 0) {
+      setTasks(user.tasks);
     }
   }, [user]);
 
@@ -72,12 +116,11 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     }, 2800);
   };
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-      showNotice('Tasks synchronized');
-    }, 600);
+    await loadTasks();
+    setRefreshing(false);
+    showNotice('Tasks synchronized');
   };
 
   const handleTabChange = (tabId) => {
@@ -100,11 +143,14 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     });
   };
 
-  // Toggle completion
-  const toggleTask = (id) => {
+  // Toggle completion with backend persistence
+  const toggleTask = async (id) => {
+    const targetId = id;
+    // Optimistic UI update
     setTasks((prev) =>
       prev.map((t) => {
-        if (t.id === id) {
+        const taskId = t._id || t.id;
+        if (taskId === targetId) {
           const nowDone = !t.done;
           const timeString = new Date().toLocaleTimeString('en-US', {
             hour: 'numeric',
@@ -114,21 +160,51 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
           return {
             ...t,
             done: nowDone,
+            status: nowDone ? 'COMPLETED' : 'PENDING',
             completedAt: nowDone ? timeString : null,
           };
         }
         return t;
       })
     );
+
+    try {
+      const token = await getToken();
+      if (token) {
+        const res = await toggleTaskComplete(targetId, token);
+        if (res && res.success && res.task) {
+          setTasks((prev) =>
+            prev.map((t) => ((t._id || t.id) === targetId ? res.task : t))
+          );
+        }
+      }
+    } catch (err) {
+      console.log('[HumanOS Tasks] Error toggling task:', err.message);
+    }
   };
 
-  // Delete Task with Confirmation Alert
+  // Delete Task with Confirmation Alert & backend persistence
+  const executeDeleteTask = async (taskId) => {
+    // Optimistic update
+    setTasks((prev) => prev.filter((t) => (t._id || t.id) !== taskId));
+    showNotice('Task deleted');
+
+    try {
+      const token = await getToken();
+      if (token) {
+        await deleteTask(taskId, token);
+      }
+    } catch (err) {
+      console.log('[HumanOS Tasks] Error deleting task:', err.message);
+    }
+  };
+
   const confirmDeleteTask = (task) => {
+    const taskId = task._id || task.id;
     setOptionsModalVisible(false);
     if (Platform.OS === 'web') {
       if (window.confirm(`Delete Task?\n\nAre you sure you want to delete "${task.title}"?`)) {
-        setTasks((prev) => prev.filter((t) => t.id !== task.id));
-        showNotice('Task deleted');
+        executeDeleteTask(taskId);
       }
     } else {
       Alert.alert(
@@ -139,10 +215,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
           {
             text: 'Delete',
             style: 'destructive',
-            onPress: () => {
-              setTasks((prev) => prev.filter((t) => t.id !== task.id));
-              showNotice('Task deleted');
-            },
+            onPress: () => executeDeleteTask(taskId),
           },
         ],
         { cancelable: true }
@@ -163,22 +236,44 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     setCreateModalVisible(true);
   };
 
-  // Submit New Task
-  const handleCreateTask = () => {
+  // Submit New Task to Backend
+  const handleCreateTask = async () => {
     if (!taskTitle.trim()) {
       setTitleError('Please enter a task title.');
       return;
     }
-    const newTask = {
-      id: Date.now().toString(),
+
+    const payload = {
       title: taskTitle.trim(),
       description: taskDescription.trim(),
       dueDate: taskDueDate,
       dueTime: taskDueTime,
       priority: taskPriority,
       category: taskCategory,
-      done: false,
       reminder: taskReminder,
+      status: 'PENDING',
+      done: false,
+    };
+
+    try {
+      const token = await getToken();
+      if (token) {
+        const res = await createTask(payload, token);
+        if (res && res.success && res.task) {
+          setTasks((prev) => [res.task, ...prev]);
+          setCreateModalVisible(false);
+          showNotice('Task added successfully');
+          return;
+        }
+      }
+    } catch (err) {
+      console.log('[HumanOS Tasks] Error creating task on backend:', err.message);
+    }
+
+    // Fallback if offline
+    const newTask = {
+      id: `task_${Date.now()}`,
+      ...payload,
       completedAt: null,
     };
     setTasks((prev) => [newTask, ...prev]);
@@ -201,48 +296,86 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     setEditModalVisible(true);
   };
 
-  // Save Edited Task
-  const handleSaveEditTask = () => {
+  // Save Edited Task to Backend
+  const handleSaveEditTask = async () => {
     if (!taskTitle.trim()) {
       setTitleError('Please enter a task title.');
       return;
     }
+
+    const taskId = selectedTask._id || selectedTask.id;
+    const updatePayload = {
+      title: taskTitle.trim(),
+      description: taskDescription.trim(),
+      dueDate: taskDueDate,
+      dueTime: taskDueTime,
+      priority: taskPriority,
+      category: taskCategory,
+      reminder: taskReminder,
+    };
+
+    // Optimistic update
     setTasks((prev) =>
       prev.map((t) =>
-        t.id === selectedTask.id
-          ? {
-              ...t,
-              title: taskTitle.trim(),
-              description: taskDescription.trim(),
-              dueDate: taskDueDate,
-              dueTime: taskDueTime,
-              priority: taskPriority,
-              category: taskCategory,
-              reminder: taskReminder,
-            }
+        (t._id || t.id) === taskId
+          ? { ...t, ...updatePayload }
           : t
       )
     );
     setEditModalVisible(false);
     showNotice('Task updated');
+
+    try {
+      const token = await getToken();
+      if (token) {
+        const res = await updateTask(taskId, updatePayload, token);
+        if (res && res.success && res.task) {
+          setTasks((prev) =>
+            prev.map((t) => ((t._id || t.id) === taskId ? res.task : t))
+          );
+        }
+      }
+    } catch (err) {
+      console.log('[HumanOS Tasks] Error updating task on backend:', err.message);
+    }
   };
 
   // Quick Reschedule
-  const handleReschedule = (task, newDate) => {
+  const handleReschedule = async (task, newDate) => {
+    const taskId = task._id || task.id;
     setTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, dueDate: newDate } : t))
+      prev.map((t) => ((t._id || t.id) === taskId ? { ...t, dueDate: newDate } : t))
     );
     setOptionsModalVisible(false);
     showNotice(`Rescheduled to ${newDate}`);
+
+    try {
+      const token = await getToken();
+      if (token) {
+        await updateTask(taskId, { dueDate: newDate }, token);
+      }
+    } catch (err) {
+      console.log('[HumanOS Tasks] Error rescheduling task:', err.message);
+    }
   };
 
   // Quick Priority Change
-  const handleChangePriority = (task, newPriority) => {
+  const handleChangePriority = async (task, newPriority) => {
+    const taskId = task._id || task.id;
     setTasks((prev) =>
-      prev.map((t) => (t.id === task.id ? { ...t, priority: newPriority } : t))
+      prev.map((t) => ((t._id || t.id) === taskId ? { ...t, priority: newPriority } : t))
     );
     setOptionsModalVisible(false);
     showNotice(`Priority set to ${newPriority}`);
+
+    try {
+      const token = await getToken();
+      if (token) {
+        await updateTask(taskId, { priority: newPriority }, token);
+      }
+    } catch (err) {
+      console.log('[HumanOS Tasks] Error updating task priority:', err.message);
+    }
   };
 
   // Computed Progress Stats
@@ -278,12 +411,12 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     // Search filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
-      list = list.filter(
-        (t) =>
-          t.title.toLowerCase().includes(q) ||
-          (t.description && t.description.toLowerCase().includes(q)) ||
-          t.category.toLowerCase().includes(q)
-      );
+      list = list.filter((t) => {
+        const title = (t?.title || t?.text || '').toLowerCase();
+        const desc = (t?.description || '').toLowerCase();
+        const cat = (t?.category || '').toLowerCase();
+        return title.includes(q) || desc.includes(q) || cat.includes(q);
+      });
     }
 
     // Priority filter (if selected)
@@ -318,17 +451,18 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   const timeOptions = ['09:00 AM', '10:00 AM', '12:30 PM', '03:00 PM', '05:00 PM', '07:00 PM'];
 
   const appContent = (
-    <View style={styles.mainWrapper}>
+    <View style={[styles.mainWrapper, { backgroundColor: theme.colors.pageBg }]}>
       {/* Toast Notice */}
       {!!noticeMessage && (
         <View style={styles.noticeToast}>
-          <Text style={styles.noticeText}>✓ {noticeMessage}</Text>
+          <Check size={14} color="#FFFFFF" strokeWidth={3} />
+          <Text style={styles.noticeText}>{noticeMessage}</Text>
         </View>
       )}
 
       <ScrollView
-        style={styles.scrollContainer}
-        contentContainerStyle={styles.scrollContentContainer}
+        style={[styles.scrollContainer, { backgroundColor: theme.colors.appBg }]}
+        contentContainerStyle={[styles.scrollContentContainer, { backgroundColor: theme.colors.pageBg }]}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         refreshControl={
@@ -362,7 +496,11 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.headerIconText}>{searchVisible ? '✕' : '🔍'}</Text>
+                {searchVisible ? (
+                  <X size={18} color="#94A3B8" strokeWidth={2.2} />
+                ) : (
+                  <Search size={18} color="#94A3B8" strokeWidth={2.2} />
+                )}
               </Pressable>
 
               <Pressable
@@ -373,7 +511,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.headerIconText}>🔔</Text>
+                <Bell size={18} color="#94A3B8" strokeWidth={2.2} />
                 <View style={styles.notificationDot} />
               </Pressable>
             </View>
@@ -382,17 +520,17 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
           {/* Dynamic Date display */}
           <View style={styles.dateRow}>
             <View style={styles.dateBadge}>
-              <Text style={styles.dateIcon}>📅</Text>
+              <CalendarDays size={13} color="#818CF8" strokeWidth={2.2} />
               <Text style={styles.dateText}>{getFormattedDate()}</Text>
             </View>
           </View>
 
           {/* Inline Search Bar (Toggled) */}
           {searchVisible && (
-            <View style={styles.searchBarContainer}>
-              <Text style={styles.searchInnerIcon}>🔍</Text>
+            <View style={[styles.searchBarContainer, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF', borderColor: isDarkMode ? '#334155' : '#E2E8F0' }]}>
+              <Search size={15} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
               <TextInput
-                style={[styles.searchInput, isWeb && styles.webOutlineNone]}
+                style={[styles.searchInput, { color: isDarkMode ? '#F8FAFC' : '#0F172A' }, isWeb && styles.webOutlineNone]}
                 placeholder="Search tasks by title or category..."
                 placeholderTextColor="#94A3B8"
                 value={searchQuery}
@@ -401,7 +539,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
               />
               {!!searchQuery && (
                 <Pressable onPress={() => setSearchQuery('')} style={styles.searchClearBtn}>
-                  <Text style={styles.searchClearText}>✕</Text>
+                  <X size={14} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
                 </Pressable>
               )}
             </View>
@@ -413,13 +551,13 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
         </View>
 
         {/* ==================== MAIN CONTENT SHEET ==================== */}
-        <View style={styles.sheetContent}>
+        <View style={[styles.sheetContent, { backgroundColor: theme.colors.pageBg }]}>
           {/* ==================== 2. DAILY TASK SUMMARY ==================== */}
-          <View style={styles.summaryCard}>
+          <View style={[styles.summaryCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.summaryTopRow}>
               <View>
                 <Text style={styles.summaryKicker}>DAILY DISCIPLINE</Text>
-                <Text style={styles.summaryTitle}>Today's Progress</Text>
+                <Text style={[styles.summaryTitle, { color: theme.colors.textPrimary }]}>Today's Progress</Text>
               </View>
               <View style={styles.progressPercentBadge}>
                 <Text style={styles.progressPercentText}>{progressPercent}%</Text>
@@ -437,9 +575,9 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
             </View>
 
             <View style={styles.summaryFooterRow}>
-              <Text style={styles.summaryCountText}>
-                <Text style={styles.summaryCountBold}>{completedTodayCount}</Text> of{' '}
-                <Text style={styles.summaryCountBold}>{totalTodayCount}</Text> tasks completed
+              <Text style={[styles.summaryCountText, { color: theme.colors.textSecondary }]}>
+                <Text style={[styles.summaryCountBold, { color: theme.colors.textPrimary }]}>{completedTodayCount}</Text> of{' '}
+                <Text style={[styles.summaryCountBold, { color: theme.colors.textPrimary }]}>{totalTodayCount}</Text> tasks completed
               </Text>
               <Text style={styles.summaryMotivationalText}>{getMotivationalMessage()}</Text>
             </View>
@@ -460,7 +598,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                     onPress={() => setActiveFilter(filter)}
                     style={({ pressed }) => [
                       styles.filterPill,
-                      isSelected ? styles.filterPillActive : styles.filterPillInactive,
+                      isSelected ? styles.filterPillActive : [styles.filterPillInactive, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }],
                       isWeb && styles.webPointer,
                       pressed && styles.pressedOpacity,
                     ]}
@@ -468,7 +606,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                     <Text
                       style={[
                         styles.filterPillText,
-                        isSelected ? styles.filterPillTextActive : styles.filterPillTextInactive,
+                        isSelected ? styles.filterPillTextActive : [styles.filterPillTextInactive, { color: theme.colors.textSecondary }],
                       ]}
                     >
                       {filter}
@@ -477,13 +615,13 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                       <View
                         style={[
                           styles.pillBadge,
-                          isSelected ? styles.pillBadgeActive : styles.pillBadgeInactive,
+                          isSelected ? styles.pillBadgeActive : [styles.pillBadgeInactive, { backgroundColor: theme.colors.cardAltBg }],
                         ]}
                       >
                         <Text
                           style={[
                             styles.pillBadgeText,
-                            isSelected ? styles.pillBadgeTextActive : styles.pillBadgeTextInactive,
+                            isSelected ? styles.pillBadgeTextActive : [styles.pillBadgeTextInactive, { color: theme.colors.textMuted }],
                           ]}
                         >
                           {totalTodayCount}
@@ -503,9 +641,14 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
               {priorityFilter && (
                 <Pressable
                   onPress={() => setPriorityFilter(null)}
-                  style={({ pressed }) => [isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
+                  style={({ pressed }) => [
+                    styles.clearFilterRow,
+                    isWeb && styles.webPointer,
+                    pressed && styles.pressedOpacity,
+                  ]}
                 >
-                  <Text style={styles.clearFilterText}>Clear priority filter ✕</Text>
+                  <Text style={styles.clearFilterText}>Clear priority filter</Text>
+                  <X size={12} color="#6366F1" strokeWidth={2.4} />
                 </Pressable>
               )}
             </View>
@@ -515,6 +658,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 onPress={() => setPriorityFilter(priorityFilter === 'High' ? null : 'High')}
                 style={({ pressed }) => [
                   styles.priorityCard,
+                  { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
                   priorityFilter === 'High' && styles.priorityCardActive,
                   isWeb && styles.webPointer,
                   pressed && styles.pressedOpacity,
@@ -522,7 +666,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
               >
                 <View style={styles.priorityCardLeft}>
                   <View style={[styles.priorityIndicatorDot, styles.dotHigh]} />
-                  <Text style={styles.priorityLabel}>High Priority</Text>
+                  <Text style={[styles.priorityLabel, { color: theme.colors.textSecondary }]}>High Priority</Text>
                 </View>
                 <Text style={[styles.priorityCount, styles.countHigh]}>{highPriorityCount}</Text>
               </Pressable>
@@ -531,6 +675,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 onPress={() => setPriorityFilter(priorityFilter === 'Medium' ? null : 'Medium')}
                 style={({ pressed }) => [
                   styles.priorityCard,
+                  { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
                   priorityFilter === 'Medium' && styles.priorityCardActive,
                   isWeb && styles.webPointer,
                   pressed && styles.pressedOpacity,
@@ -538,7 +683,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
               >
                 <View style={styles.priorityCardLeft}>
                   <View style={[styles.priorityIndicatorDot, styles.dotMedium]} />
-                  <Text style={styles.priorityLabel}>Medium</Text>
+                  <Text style={[styles.priorityLabel, { color: theme.colors.textSecondary }]}>Medium</Text>
                 </View>
                 <Text style={[styles.priorityCount, styles.countMedium]}>{mediumPriorityCount}</Text>
               </Pressable>
@@ -547,6 +692,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 onPress={() => setPriorityFilter(priorityFilter === 'Low' ? null : 'Low')}
                 style={({ pressed }) => [
                   styles.priorityCard,
+                  { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
                   priorityFilter === 'Low' && styles.priorityCardActive,
                   isWeb && styles.webPointer,
                   pressed && styles.pressedOpacity,
@@ -554,7 +700,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
               >
                 <View style={styles.priorityCardLeft}>
                   <View style={[styles.priorityIndicatorDot, styles.dotLow]} />
-                  <Text style={styles.priorityLabel}>Low</Text>
+                  <Text style={[styles.priorityLabel, { color: theme.colors.textSecondary }]}>Low</Text>
                 </View>
                 <Text style={[styles.priorityCount, styles.countLow]}>{lowPriorityCount}</Text>
               </Pressable>
@@ -566,7 +712,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
             <View style={styles.sectionHeaderRow}>
               <View>
                 <Text style={styles.sectionSubTitle}>ACTIVE QUEUE</Text>
-                <Text style={styles.sectionMainTitle}>
+                <Text style={[styles.sectionMainTitle, { color: theme.colors.textPrimary }]}>
                   {activeFilter === 'Today'
                     ? "Today's Tasks"
                     : activeFilter === 'Upcoming'
@@ -584,18 +730,19 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.quickAddHeaderText}>+ Add Task</Text>
+                <Plus size={13} color="#6366F1" strokeWidth={2.5} />
+                <Text style={styles.quickAddHeaderText}>Add Task</Text>
               </Pressable>
             </View>
 
             {/* Empty State */}
             {filteredTasks.length === 0 ? (
-              <View style={styles.emptyStateBox}>
+              <View style={[styles.emptyStateBox, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
                 <View style={styles.emptyStateIconCircle}>
-                  <Text style={styles.emptyStateIcon}>✨</Text>
+                  <Sparkles size={24} color="#6366F1" strokeWidth={2} />
                 </View>
-                <Text style={styles.emptyStateTitle}>No tasks here</Text>
-                <Text style={styles.emptyStateDesc}>You're all caught up.</Text>
+                <Text style={[styles.emptyStateTitle, { color: theme.colors.textPrimary }]}>No tasks here</Text>
+                <Text style={[styles.emptyStateDesc, { color: theme.colors.textSecondary }]}>You're all caught up.</Text>
                 <Pressable
                   onPress={openCreateModal}
                   style={({ pressed }) => [
@@ -604,22 +751,28 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                     pressed && styles.pressedOpacity,
                   ]}
                 >
-                  <Text style={styles.emptyStateActionText}>+ Add Task</Text>
+                  <Plus size={13} color="#FFFFFF" strokeWidth={2.5} />
+                  <Text style={styles.emptyStateActionText}>Add Task</Text>
                 </Pressable>
               </View>
             ) : (
               <View style={styles.tasksListContainer}>
                 {filteredTasks.map((task) => {
-                  const isHigh = task.priority === 'High';
-                  const isMed = task.priority === 'Medium';
+                  const taskId = task._id || task.id;
+                  const isHigh = task.priority === 'High' || task.priority === 'HIGH';
+                  const isMed = task.priority === 'Medium' || task.priority === 'MEDIUM';
                   return (
                     <View
-                      key={task.id}
-                      style={[styles.taskCard, task.done && styles.taskCardCompleted]}
+                      key={taskId}
+                      style={[
+                        styles.taskCard,
+                        { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
+                        task.done && [styles.taskCardCompleted, { backgroundColor: theme.colors.cardAltBg }],
+                      ]}
                     >
                       {/* Checkbox (Functional) */}
                       <Pressable
-                        onPress={() => toggleTask(task.id)}
+                        onPress={() => toggleTask(taskId)}
                         hitSlop={8}
                         style={({ pressed }) => [
                           styles.checkboxContainer,
@@ -628,12 +781,12 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                           pressed && styles.pressedOpacity,
                         ]}
                       >
-                        {task.done && <Text style={styles.checkboxCheckmark}>✓</Text>}
+                        {task.done && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
                       </Pressable>
 
                       {/* Main Task Content */}
                       <Pressable
-                        onPress={() => toggleTask(task.id)}
+                        onPress={() => toggleTask(taskId)}
                         style={({ pressed }) => [
                           styles.taskBody,
                           isWeb && styles.webPointer,
@@ -641,7 +794,11 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                         ]}
                       >
                         <Text
-                          style={[styles.taskTitleText, task.done && styles.taskTitleTextDone]}
+                          style={[
+                            styles.taskTitleText,
+                            { color: theme.colors.textPrimary },
+                            task.done && styles.taskTitleTextDone,
+                          ]}
                           numberOfLines={2}
                         >
                           {task.title}
@@ -660,7 +817,10 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                         )}
 
                         <View style={styles.taskMetaRow}>
-                          <Text style={styles.taskTimeBadge}>⏱ {task.dueTime}</Text>
+                          <View style={styles.timeBadgeRow}>
+                            <Clock size={11} color="#64748B" strokeWidth={2.2} />
+                            <Text style={styles.taskTimeBadge}>{task.dueTime}</Text>
+                          </View>
 
                           <View
                             style={[
@@ -694,7 +854,8 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
 
                           {task.dueDate !== 'Today' && (
                             <View style={styles.dueDateBadge}>
-                              <Text style={styles.dueDateBadgeText}>📅 {task.dueDate}</Text>
+                              <Calendar size={10} color="#4F46E5" strokeWidth={2.2} />
+                              <Text style={styles.dueDateBadgeText}>{task.dueDate}</Text>
                             </View>
                           )}
                         </View>
@@ -713,7 +874,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                           pressed && styles.pressedOpacity,
                         ]}
                       >
-                        <Text style={styles.threeDotText}>⋮</Text>
+                        <MoreVertical size={16} color="#64748B" strokeWidth={2.2} />
                       </Pressable>
                     </View>
                   );
@@ -764,7 +925,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                         pressed && styles.pressedOpacity,
                       ]}
                     >
-                      <Text style={styles.upcomingCheckText}>✓</Text>
+                      <Check size={12} color="#4F46E5" strokeWidth={3} />
                     </Pressable>
                   </View>
                 ))}
@@ -786,7 +947,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 {recentlyCompletedTasks.slice(0, 3).map((item) => (
                   <View key={item.id} style={styles.completedCard}>
                     <View style={styles.completedCheckIconCircle}>
-                      <Text style={styles.completedCheckMark}>✓</Text>
+                      <Check size={12} color="#10B981" strokeWidth={3} />
                     </View>
                     <View style={styles.completedTextWrapper}>
                       <Text style={styles.completedTaskTitle}>{item.title}</Text>
@@ -800,23 +961,10 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
             </View>
           )}
 
-          {/* Extra spacing for BottomNavigation */}
-          <View style={{ height: 32 }} />
+          {/* Spacing for BottomNavigation */}
+          <View style={{ height: 24 }} />
         </View>
       </ScrollView>
-
-      {/* ==================== 7. FLOATING ACTION BUTTON ==================== */}
-      <Pressable
-        onPress={openCreateModal}
-        style={({ pressed }) => [
-          styles.fabButton,
-          isWeb && styles.webPointer,
-          pressed && styles.fabPressed,
-        ]}
-      >
-        <Text style={styles.fabIcon}>+</Text>
-        <Text style={styles.fabLabel}>Add Task</Text>
-      </Pressable>
 
       {/* Bottom Navigation */}
       <BottomNavigation activeTab={activeTab} onTabPress={handleTabChange} />
@@ -843,7 +991,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.modalCloseText}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
@@ -1062,7 +1210,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.optionIcon}>✏️</Text>
+                <Pencil size={18} color="#4F46E5" strokeWidth={2.2} />
                 <Text style={styles.optionLabel}>Edit Task</Text>
               </Pressable>
 
@@ -1083,7 +1231,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.optionIcon}>⚡</Text>
+                <Zap size={18} color="#4F46E5" strokeWidth={2.2} />
                 <Text style={styles.optionLabel}>
                   Change Priority (Current: {selectedTask?.priority})
                 </Text>
@@ -1102,7 +1250,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.optionIcon}>📅</Text>
+                <Calendar size={18} color="#4F46E5" strokeWidth={2.2} />
                 <Text style={styles.optionLabel}>
                   Reschedule (To {selectedTask?.dueDate === 'Today' ? 'Tomorrow' : 'Today'})
                 </Text>
@@ -1117,7 +1265,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.optionIcon}>🗑️</Text>
+                <Trash2 size={18} color="#EF4444" strokeWidth={2.2} />
                 <Text style={styles.optionLabelDestructive}>Delete Task</Text>
               </Pressable>
             </View>
@@ -1158,7 +1306,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.modalCloseText}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
@@ -1282,11 +1430,13 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A0E1A" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.appBg }]} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle={theme.colors.statusBarStyle} backgroundColor={theme.colors.appBg} />
       {isDesktop ? (
-        <View style={styles.desktopOuterContainer}>
-          <View style={styles.desktopShell}>{appContent}</View>
+        <View style={[styles.desktopOuterContainer, { backgroundColor: theme.colors.desktopBg }]}>
+          <View style={[styles.desktopShell, { backgroundColor: theme.colors.appBg, borderColor: theme.colors.borderDark }]}>
+            {appContent}
+          </View>
         </View>
       ) : (
         appContent
@@ -1321,8 +1471,8 @@ const styles = StyleSheet.create({
     borderRadius: 32,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(16, 185, 129, 0.25)',
-    shadowColor: '#10B981',
+    borderColor: 'rgba(99, 102, 241, 0.25)',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 16 },
     shadowOpacity: 0.2,
     shadowRadius: 28,
@@ -1719,12 +1869,20 @@ const styles = StyleSheet.create({
   countLow: { color: '#4F46E5' },
 
   /* 5. TASK LIST */
+  clearFilterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   taskListSection: {
     marginBottom: 20,
   },
   quickAddHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#EEF2FF',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
     borderWidth: 1,
@@ -1812,6 +1970,11 @@ const styles = StyleSheet.create({
     gap: 6,
     marginTop: 8,
   },
+  timeBadgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   taskTimeBadge: {
     color: '#64748B',
     fontSize: 11,
@@ -1847,6 +2010,9 @@ const styles = StyleSheet.create({
   },
 
   dueDateBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
     backgroundColor: '#EEF2FF',
     paddingHorizontal: 7,
     paddingVertical: 2,
@@ -2030,6 +2196,10 @@ const styles = StyleSheet.create({
   },
   emptyStateActionBtn: {
     backgroundColor: '#4F46E5',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     paddingHorizontal: 20,
     paddingVertical: 10,
     borderRadius: 14,
@@ -2049,7 +2219,7 @@ const styles = StyleSheet.create({
   fabButton: {
     position: 'absolute',
     right: 20,
-    bottom: 84,
+    bottom: 96,
     backgroundColor: '#4F46E5', // HumanOS signature primary indigo
     flexDirection: 'row',
     alignItems: 'center',
@@ -2060,7 +2230,7 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.35,
     shadowRadius: 12,
-    elevation: 6,
+    elevation: 8,
     gap: 6,
     zIndex: 99,
   },

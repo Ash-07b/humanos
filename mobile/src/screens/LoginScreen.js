@@ -9,8 +9,13 @@ import {
   ScrollView,
   Platform,
   useWindowDimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { ArrowLeft, Eye, EyeOff, Check } from 'lucide-react-native';
+import { loginUser } from '../services/api';
+import { saveToken, saveUser } from '../services/storage';
+import Logo from '../components/Logo';
 
 const GoogleIcon = () => (
   <View style={styles.googleIconCircle}>
@@ -33,10 +38,45 @@ export default function LoginScreen({ onBack, onNavigateToRegister, onLoginSucce
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const handleSignIn = () => {
-    if (onLoginSuccess) {
-      onLoginSuccess({ email, password });
+  const handleSignIn = async () => {
+    setErrorMessage('');
+
+    if (!email.trim() || !password) {
+      setErrorMessage('Please enter your email and password.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await loginUser(email, password);
+
+      if (!response.success) {
+        setErrorMessage(response.message || 'Invalid email or password');
+        setLoading(false);
+        return;
+      }
+
+      // Store JWT token securely
+      if (response.token) {
+        await saveToken(response.token);
+      }
+
+      // Store user details
+      if (response.user) {
+        await saveUser(response.user);
+      }
+
+      setLoading(false);
+
+      if (onLoginSuccess) {
+        onLoginSuccess(response.user, response.token);
+      }
+    } catch (err) {
+      setErrorMessage(err.message || 'An unexpected error occurred during login.');
+      setLoading(false);
     }
   };
 
@@ -55,14 +95,11 @@ export default function LoginScreen({ onBack, onNavigateToRegister, onLoginSucce
             onPress={onBack}
             style={({ pressed }) => [styles.backButton, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
           >
-            <Text style={styles.backArrow}>←</Text>
+            <ArrowLeft size={18} color="#818CF8" strokeWidth={2.4} />
             <Text style={styles.backText}>Back</Text>
           </Pressable>
 
-          <View style={styles.brandMark}>
-            <View style={styles.brandDot} />
-            <View style={[styles.brandDot, styles.brandDotOffset]} />
-          </View>
+          <Logo size={32} showText={false} />
         </View>
 
         <View style={styles.heroContent}>
@@ -86,6 +123,13 @@ export default function LoginScreen({ onBack, onNavigateToRegister, onLoginSucce
         <View style={styles.handle} />
 
         <View style={styles.formContainer}>
+          {/* Error Message Display */}
+          {!!errorMessage && (
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{errorMessage}</Text>
+            </View>
+          )}
+
           {/* Email Input */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Email Address</Text>
@@ -95,7 +139,10 @@ export default function LoginScreen({ onBack, onNavigateToRegister, onLoginSucce
                 placeholder="name@example.com"
                 placeholderTextColor="#94A3B8"
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(text) => {
+                  setEmail(text);
+                  if (errorMessage) setErrorMessage('');
+                }}
                 keyboardType="email-address"
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -112,7 +159,10 @@ export default function LoginScreen({ onBack, onNavigateToRegister, onLoginSucce
                 placeholder="Enter your password"
                 placeholderTextColor="#94A3B8"
                 value={password}
-                onChangeText={setPassword}
+                onChangeText={(text) => {
+                  setPassword(text);
+                  if (errorMessage) setErrorMessage('');
+                }}
                 secureTextEntry={!showPassword}
                 autoCapitalize="none"
               />
@@ -120,7 +170,11 @@ export default function LoginScreen({ onBack, onNavigateToRegister, onLoginSucce
                 onPress={() => setShowPassword(!showPassword)}
                 style={({ pressed }) => [styles.eyeButton, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
               >
-                <Text style={styles.eyeIcon}>{showPassword ? '🙈' : '👁'}</Text>
+                {showPassword ? (
+                  <EyeOff size={18} color="#94A3B8" strokeWidth={2} />
+                ) : (
+                  <Eye size={18} color="#94A3B8" strokeWidth={2} />
+                )}
               </Pressable>
             </View>
           </View>
@@ -132,7 +186,7 @@ export default function LoginScreen({ onBack, onNavigateToRegister, onLoginSucce
               style={({ pressed }) => [styles.checkboxRow, isWeb && styles.webPointer, pressed && styles.pressedOpacity]}
             >
               <View style={[styles.checkbox, rememberMe && styles.checkboxActive]}>
-                {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+                {rememberMe && <Check size={12} color="#FFFFFF" strokeWidth={3} />}
               </View>
               <Text style={styles.checkboxLabel}>Remember me</Text>
             </Pressable>
@@ -148,9 +202,19 @@ export default function LoginScreen({ onBack, onNavigateToRegister, onLoginSucce
           {/* Primary Sign In Button */}
           <Pressable
             onPress={handleSignIn}
-            style={({ pressed }) => [styles.primaryButton, isWeb && styles.webPointer, pressed && styles.buttonPressed]}
+            disabled={loading}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              loading && styles.buttonDisabled,
+              isWeb && styles.webPointer,
+              pressed && !loading && styles.buttonPressed,
+            ]}
           >
-            <Text style={styles.primaryButtonText}>Sign In to Humanos</Text>
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.primaryButtonText}>Sign In to Humanos</Text>
+            )}
           </Pressable>
 
           {/* Footer Register Link */}
@@ -345,7 +409,23 @@ const styles = StyleSheet.create({
   footerText: { color: '#64748B', fontSize: 13 },
   signUpLink: { color: '#4F46E5', fontSize: 13, fontWeight: '700' },
   buttonPressed: { opacity: 0.88, transform: [{ scale: 0.985 }] },
+  buttonDisabled: { opacity: 0.7 },
   pressedOpacity: { opacity: 0.6 },
   webPointer: Platform.OS === 'web' ? { cursor: 'pointer' } : {},
   webOutlineNone: Platform.OS === 'web' ? { outlineStyle: 'none' } : {},
+  errorContainer: {
+    backgroundColor: '#FEF2F2',
+    borderColor: '#FCA5A5',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 4,
+  },
+  errorText: {
+    color: '#DC2626',
+    fontSize: 12.5,
+    fontWeight: '600',
+    lineHeight: 17,
+  },
 });

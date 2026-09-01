@@ -9,30 +9,72 @@ import {
   ScrollView,
   Platform,
   useWindowDimensions,
+  Image,
   RefreshControl,
   ImageBackground,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Target,
+  Flame,
+  Zap,
+  Sparkles,
+  BatteryCharging,
+  Brain,
+  ListTodo,
+  Repeat,
+  FileText,
+  CalendarDays,
+  ArrowRight,
+  Plus,
+  X,
+  Check,
+  UserRound,
+} from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
+import { useTheme } from '../../contexts/ThemeContext';
+import { fetchAiGeneralAssistant } from '../../services/api';
+import { getToken } from '../../services/storage';
+import Logo from '../../components/Logo';
 
 export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
   const { width, height } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktop = isWeb && width >= 768;
+  const { theme, isDarkMode } = useTheme();
 
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [selectedMood, setSelectedMood] = useState('⚡ High Focus');
+  const [selectedMood, setSelectedMood] = useState('High Focus');
   const [newTaskText, setNewTaskText] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
+
+  // Live AI Executive Briefing State
+  const [aiBriefingText, setAiBriefingText] = useState(
+    'Prioritize clearing your high-leverage intentions before noon. Maintain structured recovery intervals between deep work blocks.'
+  );
+  const [aiBriefingLoading, setAiBriefingLoading] = useState(false);
 
   // Safe user fallbacks for personal assistant profile
   const displayName =
     user?.fullName ||
     user?.name ||
     (user?.email ? user.email.split('@')[0] : 'User');
-  const userAvatar = user?.profilePic || '⚡';
+  const userAvatar = user?.profilePic || user?.profilePicture || user?.avatar || null;
   const userEmail = user?.email || '';
+
+  const isCustomImage = (val) => {
+    return (
+      typeof val === 'string' &&
+      (val.startsWith('http://') ||
+        val.startsWith('https://') ||
+        val.startsWith('data:') ||
+        val.startsWith('file:') ||
+        val.startsWith('blob:') ||
+        val.startsWith('ph://') ||
+        val.includes('localhost:'))
+    );
+  };
 
   // Tasks & habits state (dynamically bound to database user)
   const [tasks, setTasks] = useState(user?.tasks || user?.intentions || []);
@@ -51,18 +93,42 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
   }, [user]);
 
   const moodOptions = [
-    { label: '⚡ High Focus', emoji: '⚡' },
-    { label: '🎯 Execution', emoji: '🎯' },
-    { label: '🌿 Clarity', emoji: '🌿' },
-    { label: '🔋 Recharge', emoji: '🔋' },
-    { label: '🧠 Analytical', emoji: '🧠' },
+    { label: 'High Focus', icon: Zap },
+    { label: 'Execution', icon: Target },
+    { label: 'Clarity', icon: Sparkles },
+    { label: 'Recharge', icon: BatteryCharging },
+    { label: 'Analytical', icon: Brain },
   ];
 
   const onRefresh = () => {
     setRefreshing(true);
     setTimeout(() => {
       setRefreshing(false);
-    }, 800);
+    }, 600);
+  };
+
+  const handleRefreshAiBriefing = async () => {
+    setAiBriefingLoading(true);
+    try {
+      const token = await getToken();
+      const payload = {
+        prompt: `Give a 2-sentence morning executive productivity briefing for user ${displayName}. Current focus: ${selectedMood}. Tasks pending: ${tasks.filter(t => !t.done).length}.`,
+        module: 'Dashboard',
+        context: {
+          mood: selectedMood,
+          pendingTasks: tasks.filter(t => !t.done).map(t => t.text || t.title),
+          habitsCount: habits.length,
+        }
+      };
+      const res = await fetchAiGeneralAssistant(payload, token);
+      if (res && res.success && res.reply) {
+        setAiBriefingText(res.reply);
+      }
+    } catch (e) {
+      console.log('AI Briefing fallback:', e.message);
+    } finally {
+      setAiBriefingLoading(false);
+    }
   };
 
   const toggleTask = (id) => {
@@ -113,10 +179,10 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
   const completedHabitsCount = habits.filter((h) => h.completedToday).length;
 
   const appContent = (
-    <View style={styles.mainWrapper}>
+    <View style={[styles.mainWrapper, { backgroundColor: theme.colors.pageBg }]}>
       <ScrollView
-        style={styles.scrollContainer}
-        contentContainerStyle={styles.scrollContentContainer}
+        style={[styles.scrollContainer, { backgroundColor: theme.colors.appBg }]}
+        contentContainerStyle={[styles.scrollContentContainer, { backgroundColor: theme.colors.pageBg }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -137,11 +203,26 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
           {/* Subtle Ambient Overlay for optimal contrast & depth */}
           <View style={styles.heroOverlay} />
 
+          {/* Top Brand Bar */}
+          <View style={styles.topBrandBar}>
+            <Logo size={24} textSize={15} textColor="#E0E7FF" />
+            <View style={styles.liveSystemPill}>
+              <View style={styles.livePulseDot} />
+              <Text style={styles.liveSystemText}>System Active</Text>
+            </View>
+          </View>
+
           {/* Header Row */}
           <View style={styles.headerRow}>
             <View style={styles.userProfileInfo}>
               <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>{userAvatar}</Text>
+                {isCustomImage(userAvatar) ? (
+                  <Image source={{ uri: userAvatar }} style={styles.avatarCustomImg} resizeMode="cover" />
+                ) : userAvatar && typeof userAvatar === 'string' && userAvatar.trim().length > 0 ? (
+                  <Text style={styles.avatarText}>{userAvatar}</Text>
+                ) : (
+                  <UserRound size={22} color="#818CF8" strokeWidth={2} />
+                )}
               </View>
               <View>
                 <Text style={styles.greetingKicker}>ASSISTANT COMMAND CENTER</Text>
@@ -205,44 +286,76 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
         </ImageBackground>
 
         {/* Main Content Body */}
-        <View style={styles.contentBody}>
-          <View style={styles.handle} />
+        <View style={[styles.contentBody, { backgroundColor: theme.colors.pageBg }]}>
+          <View style={[styles.handle, { backgroundColor: theme.colors.handle }]} />
 
           {/* Metrics Quick Strip */}
           <View style={styles.metricsGrid}>
-            <View style={styles.metricCard}>
+            <View style={[styles.metricCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
               <View style={styles.metricIconWrap}>
-                <Text style={styles.metricIcon}>🎯</Text>
+                <Target size={18} color="#4F46E5" strokeWidth={2.2} />
               </View>
-              <Text style={styles.metricValue}>{taskProgressPercent}%</Text>
-              <Text style={styles.metricLabel}>Daily Execution</Text>
+              <Text style={[styles.metricValue, { color: theme.colors.textPrimary }]}>{taskProgressPercent}%</Text>
+              <Text style={[styles.metricLabel, { color: theme.colors.textMuted }]}>Daily Execution</Text>
             </View>
 
-            <View style={styles.metricCard}>
-              <View style={[styles.metricIconWrap, { backgroundColor: '#FEF3C7' }]}>
-                <Text style={styles.metricIcon}>🔥</Text>
+            <View style={[styles.metricCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+              <View style={[styles.metricIconWrap, { backgroundColor: isDarkMode ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7' }]}>
+                <Flame size={18} color="#D97706" strokeWidth={2.2} />
               </View>
-              <Text style={styles.metricValue}>{completedHabitsCount}/{habits.length}</Text>
-              <Text style={styles.metricLabel}>Habit Loops</Text>
+              <Text style={[styles.metricValue, { color: theme.colors.textPrimary }]}>{completedHabitsCount}/{habits.length}</Text>
+              <Text style={[styles.metricLabel, { color: theme.colors.textMuted }]}>Habit Loops</Text>
             </View>
 
-            <View style={styles.metricCard}>
-              <View style={[styles.metricIconWrap, { backgroundColor: '#E0F2FE' }]}>
-                <Text style={styles.metricIcon}>⚡</Text>
+            <View style={[styles.metricCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+              <View style={[styles.metricIconWrap, { backgroundColor: isDarkMode ? 'rgba(2, 132, 199, 0.2)' : '#E0F2FE' }]}>
+                <Zap size={18} color="#0284C7" strokeWidth={2.2} />
               </View>
-              <Text style={styles.metricValue}>Level 1</Text>
-              <Text style={styles.metricLabel}>Mastery Level</Text>
+              <Text style={[styles.metricValue, { color: theme.colors.textPrimary }]}>Level 1</Text>
+              <Text style={[styles.metricLabel, { color: theme.colors.textMuted }]}>Mastery Level</Text>
             </View>
           </View>
 
+          {/* Executive AI Briefing Card */}
+          <View style={[styles.aiBriefingCard, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.15)' : '#F5F3FF', borderColor: theme.colors.border }]}>
+            <View style={styles.aiBriefingHeader}>
+              <View style={styles.aiBriefingBadge}>
+                <Sparkles size={13} color="#6366F1" strokeWidth={2.2} />
+                <Text style={styles.aiBriefingBadgeText}>AI EXECUTIVE BRIEFING</Text>
+              </View>
+              <Pressable
+                onPress={handleRefreshAiBriefing}
+                disabled={aiBriefingLoading}
+                style={({ pressed }) => [
+                  styles.aiBriefingBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Text style={[styles.aiBriefingBtnText, { color: isDarkMode ? '#A5B4FC' : '#4F46E5' }]}>
+                  {aiBriefingLoading ? 'Synthesizing...' : '✦ Refresh'}
+                </Text>
+              </Pressable>
+            </View>
+            <Text style={[styles.aiBriefingBody, { color: theme.colors.textPrimary }]}>
+              "{aiBriefingText}"
+            </Text>
+          </View>
+
           {/* State of Mind & Focus Mode */}
-          <View style={styles.sectionCard}>
+          <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.sectionHeaderRow}>
               <View>
                 <Text style={styles.sectionSub}>ENERGY & FOCUS MODE</Text>
-                <Text style={styles.sectionTitle}>Current Operating State</Text>
+                <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Current Operating State</Text>
               </View>
-              <Text style={styles.currentMoodBadge}>{selectedMood.split(' ')[0]}</Text>
+              <View style={styles.currentMoodBadge}>
+                {(() => {
+                  const currentMoodObj = moodOptions.find((m) => m.label === selectedMood) || moodOptions[0];
+                  const MoodIconComponent = currentMoodObj.icon;
+                  return <MoodIconComponent size={16} color="#4F46E5" strokeWidth={2.2} />;
+                })()}
+              </View>
             </View>
 
             <ScrollView
@@ -252,6 +365,7 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
             >
               {moodOptions.map((mood) => {
                 const isSelected = selectedMood === mood.label;
+                const MoodIcon = mood.icon;
                 return (
                   <Pressable
                     key={mood.label}
@@ -263,6 +377,11 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
                       pressed && styles.pressedOpacity,
                     ]}
                   >
+                    <MoodIcon
+                      size={14}
+                      color={isSelected ? '#FFFFFF' : '#64748B'}
+                      strokeWidth={2.2}
+                    />
                     <Text style={[styles.moodPillText, isSelected && styles.moodPillTextActive]}>
                       {mood.label}
                     </Text>
@@ -273,11 +392,11 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
           </View>
 
           {/* Today's Tasks Section */}
-          <View style={styles.sectionCard}>
+          <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.sectionHeaderRow}>
               <View>
                 <Text style={styles.sectionSub}>PRIORITY QUEUE</Text>
-                <Text style={styles.sectionTitle}>Today's Tasks</Text>
+                <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Today's Tasks</Text>
               </View>
               <Pressable
                 onPress={() => setShowAddTask(!showAddTask)}
@@ -287,15 +406,20 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.addButtonText}>{showAddTask ? '✕ Close' : '+ Add Task'}</Text>
+                {showAddTask ? (
+                  <X size={14} color="#6366F1" strokeWidth={2.4} />
+                ) : (
+                  <Plus size={14} color="#6366F1" strokeWidth={2.4} />
+                )}
+                <Text style={styles.addButtonText}>{showAddTask ? 'Close' : 'Add Task'}</Text>
               </Pressable>
             </View>
 
             {/* Inline Quick Add Task */}
             {showAddTask && (
-              <View style={styles.addTaskBox}>
+              <View style={[styles.addTaskBox, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
                 <TextInput
-                  style={[styles.taskInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.taskInput, { color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   placeholder="What task do you need to complete?"
                   placeholderTextColor="#94A3B8"
                   value={newTaskText}
@@ -319,10 +443,10 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
 
             {/* List or Empty State */}
             {tasks.length === 0 ? (
-              <View style={styles.emptyStateBox}>
-                <Text style={styles.emptyStateEmoji}>📋</Text>
-                <Text style={styles.emptyStateTitle}>Task queue is currently clear</Text>
-                <Text style={styles.emptyStateDesc}>
+              <View style={[styles.emptyStateBox, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <ListTodo size={36} color="#94A3B8" strokeWidth={1.5} />
+                <Text style={[styles.emptyStateTitle, { color: theme.colors.textPrimary }]}>Task queue is currently clear</Text>
+                <Text style={[styles.emptyStateDesc, { color: theme.colors.textSecondary }]}>
                   Add key tasks to let your assistant keep your daily priorities on track.
                 </Text>
                 <Pressable
@@ -344,21 +468,22 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
                     onPress={() => toggleTask(item.id)}
                     style={({ pressed }) => [
                       styles.taskItem,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                       item.done && styles.taskItemDone,
                       isWeb && styles.webPointer,
                       pressed && styles.pressedOpacity,
                     ]}
                   >
                     <View style={[styles.checkbox, item.done && styles.checkboxActive]}>
-                      {item.done && <Text style={styles.checkmark}>✓</Text>}
+                      {item.done && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
                     </View>
                     <View style={styles.taskTextWrapper}>
-                      <Text style={[styles.taskTitle, item.done && styles.taskTitleDone]}>
+                      <Text style={[styles.taskTitle, { color: theme.colors.textPrimary }, item.done && styles.taskTitleDone]}>
                         {item.title}
                       </Text>
                       <View style={styles.taskMetaRow}>
                         <Text style={styles.taskCategoryBadge}>{item.category || 'Task'}</Text>
-                        <Text style={styles.taskTimeText}>• {item.time || 'Today'}</Text>
+                        <Text style={[styles.taskTimeText, { color: theme.colors.textMuted }]}>• {item.time || 'Today'}</Text>
                       </View>
                     </View>
                   </Pressable>
@@ -368,11 +493,11 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
           </View>
 
           {/* Daily Habit Loops Tracker */}
-          <View style={styles.sectionCard}>
+          <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.sectionHeaderRow}>
               <View>
                 <Text style={styles.sectionSub}>SYSTEM CONSISTENCY</Text>
-                <Text style={styles.sectionTitle}>Core Habits & Routines</Text>
+                <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Core Habits & Routines</Text>
               </View>
               <View style={styles.habitScoreBadge}>
                 <Text style={styles.habitScoreText}>
@@ -382,10 +507,10 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
             </View>
 
             {habits.length === 0 ? (
-              <View style={styles.emptyStateBox}>
-                <Text style={styles.emptyStateEmoji}>⚡</Text>
-                <Text style={styles.emptyStateTitle}>No habits tracked yet</Text>
-                <Text style={styles.emptyStateDesc}>
+              <View style={[styles.emptyStateBox, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Repeat size={36} color="#94A3B8" strokeWidth={1.5} />
+                <Text style={[styles.emptyStateTitle, { color: theme.colors.textPrimary }]}>No habits tracked yet</Text>
+                <Text style={[styles.emptyStateDesc, { color: theme.colors.textSecondary }]}>
                   Habits logged in your Goals & Habits tab will automatically appear here.
                 </Text>
               </View>
@@ -397,13 +522,14 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
                     onPress={() => toggleHabit(habit.id)}
                     style={({ pressed }) => [
                       styles.habitCard,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                       habit.completedToday && styles.habitCardCompleted,
                       isWeb && styles.webPointer,
                       pressed && styles.pressedOpacity,
                     ]}
                   >
                     <View style={styles.habitCardTop}>
-                      <Text style={styles.habitIcon}>{habit.icon || '⚡'}</Text>
+                      <Zap size={18} color="#6366F1" strokeWidth={2} />
                       <View
                         style={[
                           styles.habitCheckCircle,
@@ -411,14 +537,17 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
                         ]}
                       >
                         {habit.completedToday ? (
-                          <Text style={styles.habitCheckMark}>✓</Text>
+                          <Check size={11} color="#FFFFFF" strokeWidth={3} />
                         ) : (
-                          <Text style={styles.habitPlus}>+</Text>
+                          <Plus size={11} color="#64748B" strokeWidth={3} />
                         )}
                       </View>
                     </View>
-                    <Text style={styles.habitName}>{habit.name}</Text>
-                    <Text style={styles.habitStreak}>🔥 {habit.streak || 0}d streak</Text>
+                    <Text style={[styles.habitName, { color: theme.colors.textPrimary }]}>{habit.name}</Text>
+                    <View style={styles.habitStreakRow}>
+                      <Flame size={12} color="#D97706" strokeWidth={2.4} />
+                      <Text style={[styles.habitStreak, { color: theme.colors.textSecondary }]}>{habit.streak || 0}d streak</Text>
+                    </View>
                   </Pressable>
                 ))}
               </View>
@@ -426,41 +555,43 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
           </View>
 
           {/* Connected Management Modules */}
-          <View style={styles.sectionCard}>
+          <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <Text style={styles.sectionSub}>CONNECTED LIFE MODULES</Text>
-            <Text style={styles.sectionTitle}>Assistant Hub</Text>
+            <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Assistant Hub</Text>
 
             <View style={styles.moduleRow}>
               <Pressable
                 onPress={() => handleTabChange('goals')}
                 style={({ pressed }) => [
                   styles.moduleCard,
+                  { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                   isWeb && styles.webPointer,
                   pressed && styles.buttonPressed,
                 ]}
               >
                 <View style={styles.moduleCardHeader}>
-                  <Text style={styles.moduleIcon}>🎯</Text>
-                  <Text style={styles.moduleArrow}>→</Text>
+                  <Target size={20} color="#4F46E5" strokeWidth={2.2} />
+                  <ArrowRight size={15} color="#94A3B8" strokeWidth={2.4} />
                 </View>
-                <Text style={styles.moduleTitle}>Goals & Milestones</Text>
-                <Text style={styles.moduleStatus}>Intentions & progress tracker</Text>
+                <Text style={[styles.moduleTitle, { color: theme.colors.textPrimary }]}>Goals & Milestones</Text>
+                <Text style={[styles.moduleStatus, { color: theme.colors.textSecondary }]}>Intentions & progress tracker</Text>
               </Pressable>
 
               <Pressable
                 onPress={() => handleTabChange('notes')}
                 style={({ pressed }) => [
                   styles.moduleCard,
+                  { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                   isWeb && styles.webPointer,
                   pressed && styles.buttonPressed,
                 ]}
               >
                 <View style={styles.moduleCardHeader}>
-                  <Text style={styles.moduleIcon}>📁</Text>
-                  <Text style={styles.moduleArrow}>→</Text>
+                  <FileText size={20} color="#4F46E5" strokeWidth={2.2} />
+                  <ArrowRight size={15} color="#94A3B8" strokeWidth={2.4} />
                 </View>
-                <Text style={styles.moduleTitle}>Notes & Knowledge</Text>
-                <Text style={styles.moduleStatus}>Quick capture & references</Text>
+                <Text style={[styles.moduleTitle, { color: theme.colors.textPrimary }]}>Notes & Knowledge</Text>
+                <Text style={[styles.moduleStatus, { color: theme.colors.textSecondary }]}>Quick capture & references</Text>
               </Pressable>
             </View>
 
@@ -469,32 +600,34 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
                 onPress={() => handleTabChange('calendar')}
                 style={({ pressed }) => [
                   styles.moduleCard,
+                  { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                   isWeb && styles.webPointer,
                   pressed && styles.buttonPressed,
                 ]}
               >
                 <View style={styles.moduleCardHeader}>
-                  <Text style={styles.moduleIcon}>📅</Text>
-                  <Text style={styles.moduleArrow}>→</Text>
+                  <CalendarDays size={20} color="#4F46E5" strokeWidth={2.2} />
+                  <ArrowRight size={15} color="#94A3B8" strokeWidth={2.4} />
                 </View>
-                <Text style={styles.moduleTitle}>Calendar & Agenda</Text>
-                <Text style={styles.moduleStatus}>Focus blocks & schedule</Text>
+                <Text style={[styles.moduleTitle, { color: theme.colors.textPrimary }]}>Calendar & Agenda</Text>
+                <Text style={[styles.moduleStatus, { color: theme.colors.textSecondary }]}>Focus blocks & schedule</Text>
               </Pressable>
 
               <Pressable
                 onPress={() => handleTabChange('tasks')}
                 style={({ pressed }) => [
                   styles.moduleCard,
+                  { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                   isWeb && styles.webPointer,
                   pressed && styles.buttonPressed,
                 ]}
               >
                 <View style={styles.moduleCardHeader}>
-                  <Text style={styles.moduleIcon}>🎯</Text>
-                  <Text style={styles.moduleArrow}>→</Text>
+                  <ListTodo size={20} color="#4F46E5" strokeWidth={2.2} />
+                  <ArrowRight size={15} color="#94A3B8" strokeWidth={2.4} />
                 </View>
-                <Text style={styles.moduleTitle}>Tasks & OKRs</Text>
-                <Text style={styles.moduleStatus}>Priority queue & execution</Text>
+                <Text style={[styles.moduleTitle, { color: theme.colors.textPrimary }]}>Tasks & OKRs</Text>
+                <Text style={[styles.moduleStatus, { color: theme.colors.textSecondary }]}>Priority queue & execution</Text>
               </Pressable>
             </View>
           </View>
@@ -509,11 +642,13 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A0E1A" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.appBg }]} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle={theme.colors.statusBarStyle} backgroundColor={theme.colors.appBg} />
       {isDesktop ? (
-        <View style={styles.desktopOuterContainer}>
-          <View style={styles.desktopShell}>{appContent}</View>
+        <View style={[styles.desktopOuterContainer, { backgroundColor: theme.colors.desktopBg }]}>
+          <View style={[styles.desktopShell, { backgroundColor: theme.colors.appBg, borderColor: theme.colors.borderDark }]}>
+            {appContent}
+          </View>
         </View>
       ) : (
         appContent
@@ -579,6 +714,36 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(15, 23, 42, 0.55)',
   },
+  topBrandBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+    zIndex: 2,
+  },
+  liveSystemPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+    paddingHorizontal: 9,
+    paddingVertical: 3.5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 211, 153, 0.3)',
+  },
+  livePulseDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: '#34D399',
+  },
+  liveSystemText: {
+    color: '#6EE7B7',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.4,
+  },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -604,6 +769,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.45,
     shadowRadius: 8,
+    overflow: 'hidden',
+  },
+  avatarCustomImg: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 23,
   },
   avatarText: {
     fontSize: 20,
@@ -801,6 +972,52 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '600',
   },
+  aiBriefingCard: {
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    marginBottom: 16,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  aiBriefingHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  aiBriefingBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  aiBriefingBadgeText: {
+    color: '#6366F1',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  aiBriefingBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  aiBriefingBtnText: {
+    fontSize: 11.5,
+    fontWeight: '800',
+  },
+  aiBriefingBody: {
+    fontSize: 13,
+    lineHeight: 18.5,
+    fontStyle: 'italic',
+  },
   sectionCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 22,
@@ -832,7 +1049,12 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   currentMoodBadge: {
-    fontSize: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   moodScrollRow: {
     flexDirection: 'row',
@@ -840,8 +1062,11 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
   },
   moodPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: '#F1F5F9',
-    paddingHorizontal: 14,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 16,
     borderWidth: 1,
@@ -861,12 +1086,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#EEF2FF',
-    paddingHorizontal: 12,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 12,
     borderWidth: 1,
     borderColor: '#C7D2FE',
+  },
+  habitStreakRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   addButtonText: {
     color: '#4F46E5',

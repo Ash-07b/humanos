@@ -13,7 +13,18 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  WalletCards,
+  TrendingUp,
+  TrendingDown,
+  ChevronDown,
+  Plus,
+  Check,
+  X,
+  Search,
+} from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const CURRENCIES = [
   { code: 'XAF', symbol: 'FCFA ', name: 'Central African CFA Franc (Cameroon)' },
@@ -35,6 +46,7 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktop = isWeb && width >= 768;
+  const { theme, isDarkMode } = useTheme();
 
   const [activeTab, setActiveTab] = useState('finance');
   const [refreshing, setRefreshing] = useState(false);
@@ -43,6 +55,8 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState(CURRENCIES[0]); // Default to XAF (FCFA)
   const [noticeMessage, setNoticeMessage] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearch, setShowSearch] = useState(false);
 
   // Form State
   const [itemTitle, setItemTitle] = useState('');
@@ -111,9 +125,16 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
   const netSavings = totalIncome - totalExpense;
 
   const filteredTransactions = transactions.filter((t) => {
-    if (activeFilter === 'Income') return t.type === 'Income';
-    if (activeFilter === 'Expenses') return t.type === 'Expense';
-    return true;
+    let matchesType = true;
+    if (activeFilter === 'Income') matchesType = t.type === 'Income';
+    if (activeFilter === 'Expenses') matchesType = t.type === 'Expense';
+
+    const title = (t?.title || '').toLowerCase();
+    const cat = (t?.category || '').toLowerCase();
+    const q = searchQuery ? searchQuery.toLowerCase().trim() : '';
+    const matchesSearch = !q || title.includes(q) || cat.includes(q);
+
+    return matchesType && matchesSearch;
   });
 
   const categories = ['Software', 'Revenue', 'Office', 'Investments', 'Growth', 'Personal'];
@@ -121,16 +142,17 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
   const sym = selectedCurrency.symbol;
 
   const appContent = (
-    <View style={styles.mainWrapper}>
+    <View style={[styles.mainWrapper, { backgroundColor: theme.colors.pageBg }]}>
       {!!noticeMessage && (
         <View style={styles.noticeToast}>
-          <Text style={styles.noticeText}>✓ {noticeMessage}</Text>
+          <Check size={14} color="#FFFFFF" strokeWidth={3} />
+          <Text style={styles.noticeText}>{noticeMessage}</Text>
         </View>
       )}
 
       <ScrollView
-        style={styles.scrollContainer}
-        contentContainerStyle={styles.scrollContentContainer}
+        style={[styles.scrollContainer, { backgroundColor: theme.colors.appBg }]}
+        contentContainerStyle={[styles.scrollContentContainer, { backgroundColor: theme.colors.pageBg }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -144,13 +166,33 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
         {/* Header Hero */}
         <View style={styles.headerHero}>
           <View style={styles.headerTopRow}>
-            <View>
+            <View style={styles.headerTitleWrap}>
               <Text style={styles.headerKicker}>WEALTH & CASHFLOW</Text>
               <Text style={styles.headerTitle}>Finance</Text>
-              <Text style={styles.headerSubtitle}>Monitor capital allocation & liquidity.</Text>
             </View>
 
             <View style={styles.headerActionBtns}>
+              {/* Search Toggle */}
+              <Pressable
+                onPress={() => {
+                  setShowSearch(!showSearch);
+                  if (showSearch) setSearchQuery('');
+                }}
+                style={({ pressed }) => [
+                  styles.headerSearchBtn,
+                  showSearch && styles.headerSearchBtnActive,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+                hitSlop={8}
+              >
+                {showSearch ? (
+                  <X size={17} color="#94A3B8" strokeWidth={2.2} />
+                ) : (
+                  <Search size={17} color="#94A3B8" strokeWidth={2.2} />
+                )}
+              </Pressable>
+
               {/* Currency Selector Pill */}
               <Pressable
                 onPress={() => setCurrencyModalVisible(true)}
@@ -161,8 +203,9 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
                 ]}
               >
                 <Text style={styles.currencyPickerText}>
-                  {selectedCurrency.code} ({selectedCurrency.symbol.trim()}) ▾
+                  {selectedCurrency.code}
                 </Text>
+                <ChevronDown size={13} color="#818CF8" strokeWidth={2.4} />
               </Pressable>
 
               <Pressable
@@ -173,10 +216,33 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.quickAddBtnText}>+ Log</Text>
+                <Plus size={14} color="#FFFFFF" strokeWidth={2.5} />
+                <Text style={styles.quickAddBtnText}>Log</Text>
               </Pressable>
             </View>
           </View>
+
+          <Text style={styles.headerSubtitle}>Monitor capital allocation & liquidity.</Text>
+
+          {/* Search Bar */}
+          {showSearch && (
+            <View style={[styles.searchBarContainer, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF', borderColor: isDarkMode ? '#334155' : '#E2E8F0' }]}>
+              <Search size={15} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
+              <TextInput
+                style={[styles.searchInput, { color: isDarkMode ? '#F8FAFC' : '#0F172A' }, isWeb && styles.webOutlineNone]}
+                placeholder="Search transactions by title or category..."
+                placeholderTextColor="#94A3B8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoFocus
+              />
+              {!!searchQuery && (
+                <Pressable onPress={() => setSearchQuery('')} hitSlop={6} style={{ padding: 4 }}>
+                  <X size={14} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
+                </Pressable>
+              )}
+            </View>
+          )}
 
           {/* Glowing Ambient Orbs */}
           <View style={styles.orbLarge} />
@@ -184,30 +250,30 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
         </View>
 
         {/* Content Body */}
-        <View style={styles.sheetContent}>
+        <View style={[styles.sheetContent, { backgroundColor: theme.colors.pageBg }]}>
           {/* Wealth Overview Card */}
-          <View style={styles.overviewCard}>
+          <View style={[styles.overviewCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.overviewHeaderRow}>
               <Text style={styles.overviewKicker}>NET CASHFLOW (MTD)</Text>
               <Text style={styles.activeCurrencyTag}>{selectedCurrency.code}</Text>
             </View>
-            <Text style={styles.overviewAmount}>
+            <Text style={[styles.overviewAmount, { color: theme.colors.textPrimary }]}>
               {netSavings >= 0 ? '+' : '-'}{sym}{Math.abs(netSavings).toLocaleString('en-US', { minimumFractionDigits: 2 })}
             </Text>
 
             <View style={styles.statsRow}>
               <View style={styles.statItem}>
-                <Text style={styles.statLabel}>Inflow</Text>
+                <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>Inflow</Text>
                 <Text style={styles.statIncome}>+{sym}{totalIncome.toLocaleString('en-US')}</Text>
               </View>
-              <View style={styles.statDivider} />
+              <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
               <View style={styles.statItem}>
-                <Text style={styles.statLabel}>Outflow</Text>
+                <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>Outflow</Text>
                 <Text style={styles.statExpense}>-{sym}{totalExpense.toLocaleString('en-US')}</Text>
               </View>
-              <View style={styles.statDivider} />
+              <View style={[styles.statDivider, { backgroundColor: theme.colors.border }]} />
               <View style={styles.statItem}>
-                <Text style={styles.statLabel}>Savings Rate</Text>
+                <Text style={[styles.statLabel, { color: theme.colors.textMuted }]}>Savings Rate</Text>
                 <Text style={styles.statRate}>
                   {totalIncome > 0 ? Math.round((netSavings / totalIncome) * 100) : 0}%
                 </Text>
@@ -221,9 +287,21 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
               <Pressable
                 key={f}
                 onPress={() => setActiveFilter(f)}
-                style={[styles.filterPill, activeFilter === f && styles.filterPillActive]}
+                style={[
+                  styles.filterPill,
+                  activeFilter === f
+                    ? styles.filterPillActive
+                    : [styles.filterPillInactive, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }],
+                ]}
               >
-                <Text style={[styles.filterPillText, activeFilter === f && styles.filterPillTextActive]}>
+                <Text
+                  style={[
+                    styles.filterPillText,
+                    activeFilter === f
+                      ? styles.filterPillTextActive
+                      : [styles.filterPillTextInactive, { color: theme.colors.textSecondary }],
+                  ]}
+                >
                   {f}
                 </Text>
               </Pressable>
@@ -231,30 +309,34 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
           </View>
 
           {/* Transactions List */}
-          <View style={styles.sectionCard}>
+          <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionTitle}>Recent Allocations</Text>
+              <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Recent Allocations</Text>
               <Text style={styles.sectionCount}>{filteredTransactions.length} logs</Text>
             </View>
 
             {filteredTransactions.length === 0 ? (
-              <View style={{ alignItems: 'center', paddingVertical: 28, gap: 6 }}>
-                <Text style={{ fontSize: 28 }}>💰</Text>
-                <Text style={{ color: '#0F172A', fontSize: 14, fontWeight: '700' }}>No transactions recorded</Text>
-                <Text style={{ color: '#64748B', fontSize: 12, textAlign: 'center' }}>
-                  Tap "+ Record Transaction" above to track your income and expenditures.
+              <View style={{ alignItems: 'center', paddingVertical: 28, gap: 8 }}>
+                <WalletCards size={36} color="#94A3B8" strokeWidth={1.5} />
+                <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '700' }}>No transactions recorded</Text>
+                <Text style={{ color: theme.colors.textSecondary, fontSize: 12, textAlign: 'center' }}>
+                  Tap "+ Log" above to track your income and expenditures.
                 </Text>
               </View>
             ) : (
               <View style={styles.txList}>
                 {filteredTransactions.map((tx) => (
-                  <View key={tx.id} style={styles.txItem}>
+                  <View key={tx.id} style={[styles.txItem, { borderBottomColor: theme.colors.border }]}>
                     <View style={[styles.txIconWrap, tx.amount > 0 ? styles.txIconIncome : styles.txIconExpense]}>
-                      <Text style={styles.txIcon}>{tx.amount > 0 ? '↗' : '↘'}</Text>
+                      {tx.amount > 0 ? (
+                        <TrendingUp size={16} color="#059669" strokeWidth={2.4} />
+                      ) : (
+                        <TrendingDown size={16} color="#DC2626" strokeWidth={2.4} />
+                      )}
                     </View>
                     <View style={styles.txMain}>
-                      <Text style={styles.txTitle}>{tx.title}</Text>
-                      <Text style={styles.txMeta}>{tx.category} • {tx.date}</Text>
+                      <Text style={[styles.txTitle, { color: theme.colors.textPrimary }]}>{tx.title}</Text>
+                      <Text style={[styles.txMeta, { color: theme.colors.textMuted }]}>{tx.category} • {tx.date}</Text>
                     </View>
                     <Text style={[styles.txAmount, tx.amount > 0 ? styles.amountPositive : styles.amountNegative]}>
                       {tx.amount > 0 ? `+${sym}${tx.amount.toFixed(2)}` : `-${sym}${Math.abs(tx.amount).toFixed(2)}`}
@@ -284,7 +366,7 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
                 <Text style={styles.modalTitle}>Select Currency</Text>
               </View>
               <Pressable onPress={() => setCurrencyModalVisible(false)} style={styles.modalCloseBtn}>
-                <Text style={styles.modalCloseText}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
@@ -308,7 +390,7 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
                       <Text style={styles.currencyNameText}>{curr.name}</Text>
                       <Text style={styles.currencyCodeText}>{curr.code}</Text>
                     </View>
-                    {isSelected && <Text style={styles.currencySelectedCheck}>✓</Text>}
+                    {isSelected && <Check size={16} color="#4F46E5" strokeWidth={2.5} />}
                   </Pressable>
                 );
               })}
@@ -332,7 +414,7 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
                 <Text style={styles.modalTitle}>Log Cashflow Item</Text>
               </View>
               <Pressable onPress={() => setCreateModalVisible(false)} style={styles.modalCloseBtn}>
-                <Text style={styles.modalCloseText}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
@@ -390,11 +472,13 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A0E1A" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.appBg }]} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle={theme.colors.statusBarStyle} backgroundColor={theme.colors.appBg} />
       {isDesktop ? (
-        <View style={styles.desktopOuterContainer}>
-          <View style={styles.desktopShell}>{appContent}</View>
+        <View style={[styles.desktopOuterContainer, { backgroundColor: theme.colors.desktopBg }]}>
+          <View style={[styles.desktopShell, { backgroundColor: theme.colors.appBg, borderColor: theme.colors.borderDark }]}>
+            {appContent}
+          </View>
         </View>
       ) : (
         appContent
@@ -430,47 +514,107 @@ const styles = StyleSheet.create({
 
   headerHero: {
     backgroundColor: '#0F172A',
-    paddingHorizontal: 22,
-    paddingTop: 16,
-    paddingBottom: 36,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 28,
     position: 'relative',
     overflow: 'hidden',
   },
-  headerTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', zIndex: 2 },
-  headerKicker: { color: '#818CF8', fontSize: 10, fontWeight: '800', letterSpacing: 1.4, marginBottom: 4 },
-  headerTitle: { color: '#F8FAFC', fontSize: 32, fontWeight: '800', letterSpacing: -1 },
-  headerSubtitle: { color: '#94A3B8', fontSize: 13, marginTop: 4 },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    zIndex: 2,
+  },
+  headerTitleWrap: {
+    flexShrink: 0,
+  },
+  headerKicker: {
+    color: '#818CF8',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 1.2,
+    marginBottom: 2,
+  },
+  headerTitle: {
+    color: '#F8FAFC',
+    fontSize: 26,
+    fontWeight: '800',
+    letterSpacing: -0.6,
+  },
+  headerSubtitle: {
+    color: '#94A3B8',
+    fontSize: 12,
+    marginTop: 4,
+    zIndex: 2,
+  },
 
   headerActionBtns: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 5,
+    flexShrink: 0,
+  },
+  headerSearchBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: 'rgba(30, 41, 59, 0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(99, 102, 241, 0.4)',
+  },
+  headerSearchBtnActive: {
+    borderColor: '#6366F1',
+    backgroundColor: 'rgba(99, 102, 241, 0.25)',
+  },
+  searchBarContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 12,
+    borderWidth: 1,
+    zIndex: 3,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13.5,
+    marginHorizontal: 8,
   },
   currencyPickerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
     backgroundColor: 'rgba(30, 41, 59, 0.85)',
-    paddingHorizontal: 10,
-    paddingVertical: 7,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.4)',
   },
   currencyPickerText: {
     color: '#E0E7FF',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
   },
   quickAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#4F46E5',
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
     shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
-    shadowRadius: 6,
+    shadowRadius: 5,
     elevation: 3,
   },
-  quickAddBtnText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
+  quickAddBtnText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
 
   orbLarge: {
     position: 'absolute',
@@ -690,6 +834,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 14,
     alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: '#1E1B4B',
     borderWidth: 1,
     borderColor: '#6366F1',

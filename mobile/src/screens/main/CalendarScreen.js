@@ -14,7 +14,20 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  CalendarDays,
+  ListTodo,
+  ChevronLeft,
+  ChevronRight,
+  Plus,
+  Check,
+  X,
+  Sparkles,
+  MapPin,
+  Clock,
+} from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
+import { useTheme } from '../../contexts/ThemeContext';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -34,6 +47,7 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
   const { width } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktop = isWeb && width >= 768;
+  const { theme, isDarkMode } = useTheme();
 
   const today = new Date();
   const todayYMD = formatYMD(today);
@@ -198,16 +212,17 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
   const tags = ['Deep Work', 'Strategy', 'Meeting', 'Milestone', 'Health', 'Finance', 'Personal'];
 
   const appContent = (
-    <View style={styles.mainWrapper}>
+    <View style={[styles.mainWrapper, { backgroundColor: theme.colors.pageBg }]}>
       {!!noticeMessage && (
         <View style={styles.noticeToast}>
-          <Text style={styles.noticeText}>✓ {noticeMessage}</Text>
+          <Check size={14} color="#FFFFFF" strokeWidth={3} />
+          <Text style={styles.noticeText}>{noticeMessage}</Text>
         </View>
       )}
 
       <ScrollView
-        style={styles.scrollContainer}
-        contentContainerStyle={styles.scrollContentContainer}
+        style={[styles.scrollContainer, { backgroundColor: theme.colors.appBg }]}
+        contentContainerStyle={[styles.scrollContentContainer, { backgroundColor: theme.colors.pageBg }]}
         showsVerticalScrollIndicator={false}
         refreshControl={
           <RefreshControl
@@ -235,7 +250,8 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                 pressed && styles.pressedOpacity,
               ]}
             >
-              <Text style={styles.quickAddBtnText}>+ Event</Text>
+              <Plus size={13} color="#FFFFFF" strokeWidth={2.5} />
+              <Text style={styles.quickAddBtnText}>Event</Text>
             </Pressable>
           </View>
 
@@ -266,7 +282,7 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.monthNavText}>‹</Text>
+                <ChevronLeft size={16} color="#C7D2FE" strokeWidth={2.4} />
               </Pressable>
 
               <Pressable
@@ -277,7 +293,7 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Text style={styles.monthNavText}>›</Text>
+                <ChevronRight size={16} color="#C7D2FE" strokeWidth={2.4} />
               </Pressable>
             </View>
           </View>
@@ -288,23 +304,53 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
         </View>
 
         {/* ==================== 2. MAIN SHEET ==================== */}
-        <View style={styles.sheetContent}>
+        <View style={[styles.sheetContent, { backgroundColor: theme.colors.pageBg }]}>
           {/* View Mode Toggle */}
-          <View style={styles.viewToggleRow}>
+          <View style={[styles.viewToggleRow, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
             <Pressable
               onPress={() => setViewMode('month')}
-              style={[styles.viewToggleBtn, viewMode === 'month' && styles.viewToggleBtnActive]}
+              style={[
+                styles.viewToggleBtn,
+                viewMode === 'month' && [styles.viewToggleBtnActive, { backgroundColor: theme.colors.cardBg }],
+                isWeb && styles.webPointer,
+              ]}
             >
-              <Text style={[styles.viewToggleText, viewMode === 'month' && styles.viewToggleTextActive]}>
-                🗓️ Month View
+              <CalendarDays
+                size={14}
+                color={viewMode === 'month' ? (isDarkMode ? '#818CF8' : '#4F46E5') : theme.colors.textMuted}
+                strokeWidth={2.2}
+              />
+              <Text
+                style={[
+                  styles.viewToggleText,
+                  { color: theme.colors.textMuted },
+                  viewMode === 'month' && [styles.viewToggleTextActive, { color: theme.colors.textPrimary }],
+                ]}
+              >
+                Month View
               </Text>
             </Pressable>
             <Pressable
               onPress={() => setViewMode('agenda')}
-              style={[styles.viewToggleBtn, viewMode === 'agenda' && styles.viewToggleBtnActive]}
+              style={[
+                styles.viewToggleBtn,
+                viewMode === 'agenda' && [styles.viewToggleBtnActive, { backgroundColor: theme.colors.cardBg }],
+                isWeb && styles.webPointer,
+              ]}
             >
-              <Text style={[styles.viewToggleText, viewMode === 'agenda' && styles.viewToggleTextActive]}>
-                📋 Future Agenda ({futureEvents.length})
+              <ListTodo
+                size={14}
+                color={viewMode === 'agenda' ? (isDarkMode ? '#818CF8' : '#4F46E5') : theme.colors.textMuted}
+                strokeWidth={2.2}
+              />
+              <Text
+                style={[
+                  styles.viewToggleText,
+                  { color: theme.colors.textMuted },
+                  viewMode === 'agenda' && [styles.viewToggleTextActive, { color: theme.colors.textPrimary }],
+                ]}
+              >
+                Future Agenda ({futureEvents.length})
               </Text>
             </Pressable>
           </View>
@@ -312,11 +358,11 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
           {viewMode === 'month' ? (
             <>
               {/* Full Month Calendar Grid Card */}
-              <View style={styles.calendarCard}>
+              <View style={[styles.calendarCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
                 {/* Day Labels (Sun, Mon, Tue, etc.) */}
                 <View style={styles.weekDayLabelsRow}>
                   {WEEK_DAYS.map((wd) => (
-                    <Text key={wd} style={styles.weekDayLabelText}>
+                    <Text key={wd} style={[styles.weekDayLabelText, { color: theme.colors.textMuted }]}>
                       {wd}
                     </Text>
                   ))}
@@ -346,7 +392,8 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                         <Text
                           style={[
                             styles.dayCellNum,
-                            !cell.isCurrentMonth && styles.dayCellNumFaded,
+                            { color: theme.colors.textPrimary },
+                            !cell.isCurrentMonth && [styles.dayCellNumFaded, { color: theme.colors.textMuted }],
                             isToday && !isSelected && styles.dayCellNumToday,
                             isSelected && styles.dayCellNumSelected,
                           ]}
@@ -370,13 +417,13 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
               </View>
 
               {/* Selected Day Agenda Section */}
-              <View style={styles.sectionCard}>
+              <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
                 <View style={styles.sectionHeaderRow}>
                   <View>
                     <Text style={styles.sectionSubTitle}>
                       {selectedYMD === todayYMD ? 'TODAY’S SCHEDULE' : 'SELECTED DATE'}
                     </Text>
-                    <Text style={styles.sectionMainTitle}>
+                    <Text style={[styles.sectionMainTitle, { color: theme.colors.textPrimary }]}>
                       {selectedDate.toLocaleDateString('en-US', {
                         weekday: 'short',
                         month: 'long',
@@ -394,39 +441,44 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                       pressed && styles.pressedOpacity,
                     ]}
                   >
-                    <Text style={styles.addDayEventText}>+ Add</Text>
+                    <Plus size={12} color="#4F46E5" strokeWidth={2.5} />
+                    <Text style={styles.addDayEventText}>Add</Text>
                   </Pressable>
                 </View>
 
                 {selectedDayEvents.length === 0 ? (
-                  <View style={styles.emptyDayBox}>
-                    <Text style={styles.emptyDayIcon}>✨</Text>
-                    <Text style={styles.emptyDayTitle}>Open Focus Time</Text>
-                    <Text style={styles.emptyDayDesc}>
+                  <View style={[styles.emptyDayBox, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                    <Sparkles size={36} color="#94A3B8" strokeWidth={1.5} />
+                    <Text style={[styles.emptyDayTitle, { color: theme.colors.textPrimary }]}>Open Focus Time</Text>
+                    <Text style={[styles.emptyDayDesc, { color: theme.colors.textSecondary }]}>
                       No commitments scheduled on this date. Perfect for deep uninterrupted flow.
                     </Text>
                     <Pressable
                       onPress={() => openCreateModal(selectedDate)}
                       style={styles.emptyDayActionBtn}
                     >
-                      <Text style={styles.emptyDayActionText}>+ Schedule an Event</Text>
+                      <Plus size={13} color="#4F46E5" strokeWidth={2.5} />
+                      <Text style={styles.emptyDayActionText}>Schedule an Event</Text>
                     </Pressable>
                   </View>
                 ) : (
                   <View style={styles.eventsList}>
                     {selectedDayEvents.map((ev) => (
-                      <View key={ev.id} style={styles.eventCard}>
+                      <View key={ev.id} style={[styles.eventCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
                         <View style={[styles.eventStripe, { backgroundColor: ev.color }]} />
                         <View style={styles.eventBody}>
                           <View style={styles.eventTopRow}>
                             <View style={styles.eventTagBadge}>
                               <Text style={styles.eventTagText}>{ev.tag}</Text>
                             </View>
-                            <Text style={styles.eventTimeText}>{ev.time}</Text>
+                            <Text style={[styles.eventTimeText, { color: theme.colors.textMuted }]}>{ev.time}</Text>
                           </View>
-                          <Text style={styles.eventTitle}>{ev.title}</Text>
+                          <Text style={[styles.eventTitle, { color: theme.colors.textPrimary }]}>{ev.title}</Text>
                           {!!ev.location && (
-                            <Text style={styles.eventLocationText}>📍 {ev.location}</Text>
+                            <View style={styles.eventLocationRow}>
+                              <MapPin size={12} color="#64748B" strokeWidth={2.2} />
+                              <Text style={[styles.eventLocationText, { color: theme.colors.textSecondary }]}>{ev.location}</Text>
+                            </View>
                           )}
                         </View>
                       </View>
@@ -437,11 +489,11 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
             </>
           ) : (
             /* Future Agenda View */
-            <View style={styles.sectionCard}>
+            <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
               <View style={styles.sectionHeaderRow}>
                 <View>
                   <Text style={styles.sectionSubTitle}>FORWARD TIMELINE</Text>
-                  <Text style={styles.sectionMainTitle}>All Upcoming & Future Events</Text>
+                  <Text style={[styles.sectionMainTitle, { color: theme.colors.textPrimary }]}>All Upcoming & Future Events</Text>
                 </View>
               </View>
 
@@ -449,13 +501,13 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                 {futureEvents.map((ev) => {
                   const evDate = new Date(ev.dateString + 'T00:00:00');
                   return (
-                    <View key={ev.id} style={styles.futureEventCard}>
-                      <View style={styles.futureDateBadge}>
-                        <Text style={styles.futureMonthText}>
+                    <View key={ev.id} style={[styles.futureEventCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                      <View style={[styles.futureDateBadge, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF', borderColor: theme.colors.border }]}>
+                        <Text style={[styles.futureMonthText, { color: isDarkMode ? '#C7D2FE' : '#4F46E5' }]}>
                           {evDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
                         </Text>
-                        <Text style={styles.futureDayNumText}>{evDate.getDate()}</Text>
-                        <Text style={styles.futureYearText}>{evDate.getFullYear()}</Text>
+                        <Text style={[styles.futureDayNumText, { color: theme.colors.textPrimary }]}>{evDate.getDate()}</Text>
+                        <Text style={[styles.futureYearText, { color: theme.colors.textMuted }]}>{evDate.getFullYear()}</Text>
                       </View>
 
                       <View style={styles.futureEventBody}>
@@ -463,11 +515,14 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                           <View style={styles.eventTagBadge}>
                             <Text style={styles.eventTagText}>{ev.tag}</Text>
                           </View>
-                          <Text style={styles.eventTimeText}>{ev.time}</Text>
+                          <Text style={[styles.eventTimeText, { color: theme.colors.textMuted }]}>{ev.time}</Text>
                         </View>
-                        <Text style={styles.eventTitle}>{ev.title}</Text>
+                        <Text style={[styles.eventTitle, { color: theme.colors.textPrimary }]}>{ev.title}</Text>
                         {!!ev.location && (
-                          <Text style={styles.eventLocationText}>📍 {ev.location}</Text>
+                          <View style={styles.eventLocationRow}>
+                            <MapPin size={12} color="#64748B" strokeWidth={2.2} />
+                            <Text style={[styles.eventLocationText, { color: theme.colors.textSecondary }]}>{ev.location}</Text>
+                          </View>
                         )}
                       </View>
                     </View>
@@ -489,26 +544,26 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
         onRequestClose={() => setCreateModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
               <View>
                 <Text style={styles.modalKicker}>SCHEDULE EVENT</Text>
-                <Text style={styles.modalTitle}>Add Future Event</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Add Future Event</Text>
               </View>
               <Pressable
                 onPress={() => setCreateModalVisible(false)}
                 style={styles.modalCloseBtn}
               >
-                <Text style={styles.modalCloseText}>✕</Text>
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
 
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               {/* Event Title */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Event Title *</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Event Title *</Text>
                 <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   placeholder="e.g. Quarterly Product Strategy Review"
                   placeholderTextColor="#94A3B8"
                   value={eventTitle}
@@ -519,9 +574,9 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
 
               {/* Date Input */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Event Date (YYYY-MM-DD) *</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Event Date (YYYY-MM-DD) *</Text>
                 <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   placeholder="YYYY-MM-DD (e.g. 2026-09-15)"
                   placeholderTextColor="#94A3B8"
                   value={eventDateStr}
@@ -531,7 +586,7 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
 
               {/* Quick Date Presets */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Quick Date Presets</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Quick Date Presets</Text>
                 <View style={styles.chipRow}>
                   {[
                     { label: 'Today', date: todayYMD },
@@ -545,12 +600,14 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                       onPress={() => setEventDateStr(preset.date)}
                       style={[
                         styles.chip,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
                         eventDateStr === preset.date && styles.chipActive,
                       ]}
                     >
                       <Text
                         style={[
                           styles.chipText,
+                          { color: theme.colors.textSecondary },
                           eventDateStr === preset.date && styles.chipTextActive,
                         ]}
                       >
@@ -564,9 +621,9 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
               {/* Time Slots */}
               <View style={styles.timeRowGroup}>
                 <View style={[styles.modalInputGroup, { flex: 1 }]}>
-                  <Text style={styles.modalInputLabel}>Start Time</Text>
+                  <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Start Time</Text>
                   <TextInput
-                    style={[styles.modalInput, isWeb && styles.webOutlineNone]}
+                    style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                     placeholder="10:00 AM"
                     placeholderTextColor="#94A3B8"
                     value={eventStartTime}
@@ -574,9 +631,9 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                   />
                 </View>
                 <View style={[styles.modalInputGroup, { flex: 1 }]}>
-                  <Text style={styles.modalInputLabel}>End Time</Text>
+                  <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>End Time</Text>
                   <TextInput
-                    style={[styles.modalInput, isWeb && styles.webOutlineNone]}
+                    style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                     placeholder="11:30 AM"
                     placeholderTextColor="#94A3B8"
                     value={eventEndTime}
@@ -587,9 +644,9 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
 
               {/* Location */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Location / Link (Optional)</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Location / Link (Optional)</Text>
                 <TextInput
-                  style={[styles.modalInput, isWeb && styles.webOutlineNone]}
+                  style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
                   placeholder="e.g. Conference Room / Zoom link"
                   placeholderTextColor="#94A3B8"
                   value={eventLocation}
@@ -599,17 +656,22 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
 
               {/* Tag / Category */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Category</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Category</Text>
                 <View style={styles.chipRow}>
                   {tags.map((t) => (
                     <Pressable
                       key={t}
                       onPress={() => setEventTag(t)}
-                      style={[styles.chip, eventTag === t && styles.chipActive]}
+                      style={[
+                        styles.chip,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        eventTag === t && styles.chipActive,
+                      ]}
                     >
                       <Text
                         style={[
                           styles.chipText,
+                          { color: theme.colors.textSecondary },
                           eventTag === t && styles.chipTextActive,
                         ]}
                       >
@@ -623,8 +685,8 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
               {/* Reminder Toggle */}
               <View style={styles.reminderRow}>
                 <View>
-                  <Text style={styles.modalInputLabel}>Push Notification</Text>
-                  <Text style={styles.reminderSubText}>Alert 15 minutes before event starts</Text>
+                  <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Push Notification</Text>
+                  <Text style={[styles.reminderSubText, { color: theme.colors.textMuted }]}>Alert 15 minutes before event starts</Text>
                 </View>
                 <Switch
                   value={eventReminder}
@@ -638,9 +700,9 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
             <View style={styles.modalActionsRow}>
               <Pressable
                 onPress={() => setCreateModalVisible(false)}
-                style={styles.modalCancelBtn}
+                style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
               >
-                <Text style={styles.modalCancelText}>Cancel</Text>
+                <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
               </Pressable>
 
               <Pressable
@@ -660,11 +722,13 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
   );
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={['top', 'left', 'right']}>
-      <StatusBar barStyle="light-content" backgroundColor="#0A0E1A" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.colors.appBg }]} edges={['top', 'left', 'right']}>
+      <StatusBar barStyle={theme.colors.statusBarStyle} backgroundColor={theme.colors.appBg} />
       {isDesktop ? (
-        <View style={styles.desktopOuterContainer}>
-          <View style={styles.desktopShell}>{appContent}</View>
+        <View style={[styles.desktopOuterContainer, { backgroundColor: theme.colors.desktopBg }]}>
+          <View style={[styles.desktopShell, { backgroundColor: theme.colors.appBg, borderColor: theme.colors.borderDark }]}>
+            {appContent}
+          </View>
         </View>
       ) : (
         appContent
@@ -674,8 +738,8 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#0A0E1A' },
-  mainWrapper: { flex: 1, backgroundColor: '#0A0E1A' },
+  safeArea: { flex: 1 },
+  mainWrapper: { flex: 1 },
   desktopOuterContainer: {
     flex: 1,
     backgroundColor: '#05070D',
@@ -695,8 +759,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(99, 102, 241, 0.25)',
     backgroundColor: '#0A0E1A',
   },
-  scrollContainer: { flex: 1, backgroundColor: '#0A0E1A' },
-  scrollContentContainer: { flexGrow: 1, backgroundColor: '#F8FAFC', paddingBottom: 24 },
+  scrollContainer: { flex: 1 },
+  scrollContentContainer: { flexGrow: 1, paddingBottom: 24 },
 
   /* 1. HEADER */
   headerHero: {
@@ -733,6 +797,9 @@ const styles = StyleSheet.create({
     maxWidth: 240,
   },
   quickAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#4F46E5',
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -844,9 +911,12 @@ const styles = StyleSheet.create({
   },
   viewToggleBtn: {
     flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     paddingVertical: 8,
     borderRadius: 12,
-    alignItems: 'center',
   },
   viewToggleBtnActive: {
     backgroundColor: '#FFFFFF',
@@ -977,6 +1047,9 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   addDayEventBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     backgroundColor: '#EEF2FF',
     paddingHorizontal: 12,
     paddingVertical: 6,
@@ -1014,6 +1087,10 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   emptyDayActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     backgroundColor: '#4F46E5',
     paddingHorizontal: 16,
     paddingVertical: 9,
@@ -1070,10 +1147,15 @@ const styles = StyleSheet.create({
     fontSize: 14.5,
     fontWeight: '700',
   },
+  eventLocationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+  },
   eventLocationText: {
     color: '#64748B',
     fontSize: 11,
-    marginTop: 4,
   },
 
   /* Future Event Cards in Agenda View */
@@ -1275,6 +1357,9 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 14,
     alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     backgroundColor: '#1E1B4B',
     borderWidth: 1,
     borderColor: '#6366F1',

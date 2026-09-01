@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { View, ActivityIndicator } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { ThemeProvider } from './src/contexts/ThemeContext';
 import WelcomeScreen from './src/screens/WelcomeScreen';
 import LoginScreen from './src/screens/LoginScreen';
 import RegisterScreen from './src/screens/RegisterScreen';
@@ -12,10 +14,56 @@ import FinanceScreen from './src/screens/main/FinanceScreen';
 import NotesScreen from './src/screens/main/NotesScreen';
 import CalendarScreen from './src/screens/main/CalendarScreen';
 import HealthScreen from './src/screens/main/HealthScreen';
+import { getToken, getUser, saveUser, clearSession } from './src/services/storage';
+import { fetchUserProfile } from './src/services/api';
 
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState('welcome');
   const [currentUser, setCurrentUser] = useState(null);
+  const [initializing, setInitializing] = useState(true);
+
+  // Restore authentication state when app starts
+  useEffect(() => {
+    const restoreSession = async () => {
+      try {
+        const token = await getToken();
+        const cachedUser = await getUser();
+
+        if (token) {
+          // Fetch fresh user profile from backend API to validate JWT token and role
+          const profileResponse = await fetchUserProfile(token);
+
+          if (profileResponse.success && profileResponse.user) {
+            const userObj = {
+              ...profileResponse.user,
+              id: profileResponse.user._id || profileResponse.user.id,
+              profilePic: profileResponse.user.profilePicture || cachedUser?.profilePic || '⚡',
+            };
+            await saveUser(userObj);
+            setCurrentUser(userObj);
+            setCurrentScreen('dashboard');
+          } else if (cachedUser) {
+            // Retain cached session if offline/temporary network glitch
+            setCurrentUser(cachedUser);
+            setCurrentScreen('dashboard');
+          } else {
+            // Token is invalid or expired
+            await clearSession();
+            setCurrentScreen('welcome');
+          }
+        } else {
+          setCurrentScreen('welcome');
+        }
+      } catch (error) {
+        console.warn('Error restoring authentication session:', error);
+        setCurrentScreen('welcome');
+      } finally {
+        setInitializing(false);
+      }
+    };
+
+    restoreSession();
+  }, []);
 
   const handleOpenRegister = () => {
     setCurrentScreen('register');
@@ -37,19 +85,36 @@ export default function App() {
     setCurrentScreen('login');
   };
 
-  const handleLoginSuccess = (credentials) => {
-    console.log('User logged in with:', credentials);
-    setCurrentUser(credentials || null);
+  const handleLoginSuccess = (user) => {
+    const userObj = user
+      ? {
+          ...user,
+          id: user._id || user.id,
+          profilePic: user.profilePicture || user.profilePic || '⚡',
+        }
+      : null;
+    setCurrentUser(userObj);
     setCurrentScreen('dashboard');
   };
 
-  const handleRegisterSuccess = (userInfo) => {
-    console.log('User registered with:', userInfo);
-    setCurrentUser(userInfo || null);
+  const handleRegisterSuccess = (user) => {
+    const userObj = user
+      ? {
+          ...user,
+          id: user._id || user.id,
+          profilePic: user.profilePicture || user.profilePic || '⚡',
+        }
+      : null;
+    setCurrentUser(userObj);
     setCurrentScreen('dashboard');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await clearSession();
+    } catch (e) {
+      console.warn('Error during logout:', e);
+    }
     setCurrentUser(null);
     setCurrentScreen('login');
   };
@@ -70,6 +135,14 @@ export default function App() {
   };
 
   const renderScreen = () => {
+    if (initializing) {
+      return (
+        <View style={{ flex: 1, backgroundColor: '#0A0E1A', alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator size="large" color="#6366F1" />
+        </View>
+      );
+    }
+
     if (currentScreen === 'profile') {
       return (
         <ProfileScreen
@@ -188,8 +261,10 @@ export default function App() {
   };
 
   return (
-    <SafeAreaProvider style={{ flex: 1, backgroundColor: '#0A0E1A' }}>
-      {renderScreen()}
-    </SafeAreaProvider>
+    <ThemeProvider initialDarkMode={currentUser?.preferences?.darkMode ?? true}>
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: '#0A0E1A' }}>
+        {renderScreen()}
+      </SafeAreaProvider>
+    </ThemeProvider>
   );
 }
