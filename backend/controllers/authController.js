@@ -88,6 +88,7 @@ const register = async (req, res) => {
         gender: user.gender,
         dateOfBirth: user.dateOfBirth,
         profilePicture: user.profilePicture,
+        profilePic: user.profilePicture,
         status: user.status,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
@@ -170,6 +171,7 @@ const login = async (req, res) => {
         gender: user.gender,
         dateOfBirth: user.dateOfBirth,
         profilePicture: user.profilePicture,
+        profilePic: user.profilePicture,
         status: user.status,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
@@ -190,9 +192,13 @@ const login = async (req, res) => {
  */
 const getProfile = async (req, res) => {
   try {
+    const userObj = req.user.toObject ? req.user.toObject() : req.user;
     return res.status(200).json({
       success: true,
-      user: req.user,
+      user: {
+        ...userObj,
+        profilePic: userObj.profilePicture || userObj.profilePic || '',
+      },
     });
   } catch (error) {
     return res.status(500).json({
@@ -252,6 +258,7 @@ const updateProfile = async (req, res) => {
         gender: updatedUser.gender,
         dateOfBirth: updatedUser.dateOfBirth,
         profilePicture: updatedUser.profilePicture,
+        profilePic: updatedUser.profilePicture,
         status: updatedUser.status,
         createdAt: updatedUser.createdAt,
         updatedAt: updatedUser.updatedAt,

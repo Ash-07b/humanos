@@ -64,7 +64,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { updateUserProfile } from '../../services/api';
 import { getToken, saveUser } from '../../services/storage';
 
-export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
+export default function ProfileScreen({ user, onLogout, onNavigateTab, onUpdateUser }) {
   const { width, height } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktop = isWeb && width >= 768;
@@ -79,7 +79,7 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
   const [phoneNumber, setPhoneNumber] = useState(user?.phoneNumber || user?.phone || '');
   const [gender, setGender] = useState(user?.gender || '');
   const [dob, setDob] = useState(user?.dob || user?.dateOfBirth || '');
-  const [avatar, setAvatar] = useState(user?.profilePic || user?.avatar || '🌱');
+  const [avatar, setAvatar] = useState(user?.profilePic || user?.profilePicture || user?.avatar || '🌱');
   const [memberStatus, setMemberStatus] = useState(user?.memberStatus || user?.tier || 'Active');
   const [securityScore, setSecurityScore] = useState(user?.securityScore ?? 98);
   const [activeStreak, setActiveStreak] = useState(user?.activeStreak ?? 0);
@@ -93,7 +93,9 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
       if (user.phoneNumber !== undefined || user.phone !== undefined) setPhoneNumber(user.phoneNumber || user.phone || '');
       if (user.gender !== undefined) setGender(user.gender || '');
       if (user.dob !== undefined || user.dateOfBirth !== undefined) setDob(user.dob || user.dateOfBirth || '');
-      if (user.profilePic !== undefined || user.avatar !== undefined) setAvatar(user.profilePic || user.avatar || '🌱');
+      if (user.profilePic !== undefined || user.profilePicture !== undefined || user.avatar !== undefined) {
+        setAvatar(user.profilePic || user.profilePicture || user.avatar || '🌱');
+      }
       if (user.memberStatus !== undefined || user.tier !== undefined) setMemberStatus(user.memberStatus || user.tier || 'Active');
       if (user.securityScore !== undefined) setSecurityScore(user.securityScore);
       if (user.activeStreak !== undefined) setActiveStreak(user.activeStreak);
@@ -223,7 +225,8 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         val.startsWith('data:') ||
         val.startsWith('file:') ||
         val.startsWith('blob:') ||
-        val.startsWith('ph://'))
+        val.startsWith('ph://') ||
+        val.startsWith('content://'))
     );
   };
 
@@ -233,8 +236,17 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
       const token = await getToken();
       if (!token) return;
       const res = await updateUserProfile(patch, token);
-      if (res.success && res.user) {
-        await saveUser(res.user);
+      if (res && res.success && res.user) {
+        const mergedUser = {
+          ...user,
+          ...res.user,
+          profilePic: res.user.profilePicture || res.user.profilePic || patch.profilePicture || avatar,
+          profilePicture: res.user.profilePicture || res.user.profilePic || patch.profilePicture || avatar,
+        };
+        await saveUser(mergedUser);
+        if (onUpdateUser) {
+          onUpdateUser(mergedUser);
+        }
       }
     } catch (e) {
       console.log('Error syncing profile to database:', e);
@@ -245,6 +257,18 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
     setAvatar(newPic);
     setPhotoPickerVisible(false);
     showNotice(isCustomImage(newPic) ? 'Profile picture updated & saved' : `Avatar updated to ${newPic}`);
+
+    // Instantly update parent state and AsyncStorage so Dashboard reflects it immediately
+    const quickUpdate = {
+      ...(user || {}),
+      profilePic: newPic,
+      profilePicture: newPic,
+    };
+    await saveUser(quickUpdate);
+    if (onUpdateUser) {
+      onUpdateUser(quickUpdate);
+    }
+
     await syncProfileToBackend({ profilePicture: newPic });
   };
 
@@ -259,10 +283,13 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.85,
+        quality: 0.5,
+        base64: true,
       });
-      if (!result.canceled && result.assets && result.assets[0]?.uri) {
-        await updateAvatarAndSave(result.assets[0].uri);
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const asset = result.assets[0];
+        const imageUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        await updateAvatarAndSave(imageUri);
       }
     } catch (err) {
       console.log('Image picker error:', err);
@@ -280,10 +307,13 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.85,
+        quality: 0.5,
+        base64: true,
       });
-      if (!result.canceled && result.assets && result.assets[0]?.uri) {
-        await updateAvatarAndSave(result.assets[0].uri);
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const asset = result.assets[0];
+        const imageUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        await updateAvatarAndSave(imageUri);
       }
     } catch (err) {
       console.log('Camera error:', err);
@@ -318,13 +348,27 @@ export default function ProfileScreen({ user, onLogout, onNavigateTab }) {
     setDob(tempDob);
     setEditProfileModalVisible(false);
     showNotice('Profile updated successfully');
-    await syncProfileToBackend({
+
+    const profilePatch = {
       fullName: tempName,
       phoneNumber: tempPhone,
       gender: tempGender,
       dateOfBirth: tempDob,
       profilePicture: avatar,
-    });
+    };
+
+    const quickUpdate = {
+      ...(user || {}),
+      ...profilePatch,
+      profilePic: avatar,
+      profilePicture: avatar,
+    };
+    await saveUser(quickUpdate);
+    if (onUpdateUser) {
+      onUpdateUser(quickUpdate);
+    }
+
+    await syncProfileToBackend(profilePatch);
   };
 
   const handleToggleDarkMode = async (val) => {

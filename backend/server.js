@@ -11,8 +11,9 @@ const app = express();
 // Connect to MongoDB
 connectDB();
 
-// Body parser middleware
-app.use(express.json());
+// Body parser middleware with generous payload limit for base64 images
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ limit: '15mb', extended: true }));
 
 // CORS middleware
 app.use((req, res, next) => {

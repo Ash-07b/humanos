@@ -33,11 +33,11 @@ import {
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
-import { fetchAiGeneralAssistant } from '../../services/api';
-import { getToken } from '../../services/storage';
+import { fetchAiGeneralAssistant, fetchUserProfile } from '../../services/api';
+import { getToken, saveUser } from '../../services/storage';
 import Logo from '../../components/Logo';
 
-export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
+export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdateUser }) {
   const { width, height } = useWindowDimensions();
   const isWeb = Platform.OS === 'web';
   const isDesktop = isWeb && width >= 768;
@@ -72,6 +72,7 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
         val.startsWith('file:') ||
         val.startsWith('blob:') ||
         val.startsWith('ph://') ||
+        val.startsWith('content://') ||
         val.includes('localhost:'))
     );
   };
@@ -100,11 +101,32 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
     { label: 'Analytical', icon: Brain },
   ];
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
-    }, 600);
+    try {
+      const token = await getToken();
+      if (token) {
+        const res = await fetchUserProfile(token);
+        if (res && res.success && res.user) {
+          const updated = {
+            ...(user || {}),
+            ...res.user,
+            profilePic: res.user.profilePicture || res.user.profilePic || (user && (user.profilePic || user.profilePicture)) || '⚡',
+            profilePicture: res.user.profilePicture || res.user.profilePic,
+          };
+          await saveUser(updated);
+          if (onUpdateUser) {
+            onUpdateUser(updated);
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Error refreshing user profile:', e);
+    } finally {
+      setTimeout(() => {
+        setRefreshing(false);
+      }, 400);
+    }
   };
 
   const handleRefreshAiBriefing = async () => {
@@ -214,7 +236,14 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
 
           {/* Header Row */}
           <View style={styles.headerRow}>
-            <View style={styles.userProfileInfo}>
+            <Pressable
+              onPress={() => onNavigateTab && onNavigateTab('profile')}
+              style={({ pressed }) => [
+                styles.userProfileInfo,
+                isWeb && styles.webPointer,
+                pressed && styles.pressedOpacity,
+              ]}
+            >
               <View style={styles.avatarCircle}>
                 {isCustomImage(userAvatar) ? (
                   <Image source={{ uri: userAvatar }} style={styles.avatarCustomImg} resizeMode="cover" />
@@ -228,7 +257,7 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab }) {
                 <Text style={styles.greetingKicker}>ASSISTANT COMMAND CENTER</Text>
                 <Text style={styles.greetingName}>{displayName}</Text>
               </View>
-            </View>
+            </Pressable>
 
             <View style={styles.headerActionRow}>
               {onLogout && (

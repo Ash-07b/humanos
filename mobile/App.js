@@ -109,6 +109,21 @@ export default function App() {
     setCurrentScreen('dashboard');
   };
 
+  const handleUpdateUser = async (updatedData) => {
+    if (!updatedData) return;
+    setCurrentUser((prev) => {
+      const merged = {
+        ...(prev || {}),
+        ...updatedData,
+        id: updatedData._id || updatedData.id || prev?.id,
+        profilePic: updatedData.profilePicture || updatedData.profilePic || prev?.profilePic || '⚡',
+        profilePicture: updatedData.profilePicture || updatedData.profilePic || prev?.profilePicture,
+      };
+      saveUser(merged);
+      return merged;
+    });
+  };
+
   const handleLogout = async () => {
     try {
       await clearSession();
@@ -149,6 +164,7 @@ export default function App() {
           user={currentUser}
           onLogout={handleLogout}
           onNavigateTab={handleNavigateTab}
+          onUpdateUser={handleUpdateUser}
         />
       );
     }
@@ -219,6 +235,7 @@ export default function App() {
           user={currentUser}
           onLogout={handleLogout}
           onNavigateTab={handleNavigateTab}
+          onUpdateUser={handleUpdateUser}
         />
       );
     }

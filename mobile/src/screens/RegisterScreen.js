@@ -92,10 +92,13 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.85,
+        quality: 0.5,
+        base64: true,
       });
-      if (!result.canceled && result.assets && result.assets[0]?.uri) {
-        setProfilePic(result.assets[0].uri);
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const asset = result.assets[0];
+        const imageUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setProfilePic(imageUri);
         setPhotoPickerVisible(false);
         if (errorMessage) setErrorMessage('');
       }
@@ -114,10 +117,13 @@ export default function RegisterScreen({ onBack, onNavigateToLogin, onRegisterSu
       const result = await ImagePicker.launchCameraAsync({
         allowsEditing: true,
         aspect: [1, 1],
-        quality: 0.85,
+        quality: 0.5,
+        base64: true,
       });
-      if (!result.canceled && result.assets && result.assets[0]?.uri) {
-        setProfilePic(result.assets[0].uri);
+      if (!result.canceled && result.assets && result.assets[0]) {
+        const asset = result.assets[0];
+        const imageUri = asset.base64 ? `data:image/jpeg;base64,${asset.base64}` : asset.uri;
+        setProfilePic(imageUri);
         setPhotoPickerVisible(false);
         if (errorMessage) setErrorMessage('');
       }
