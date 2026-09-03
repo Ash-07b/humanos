@@ -25,7 +25,10 @@ async function adminRequest(endpoint, options = {}) {
   try {
     data = await response.json();
   } catch (err) {
-    data = { success: false, message: 'Invalid JSON response from server' };
+    const errorHint = response.status === 404
+      ? 'Admin API routes not loaded on backend. Please restart your backend server (Ctrl+C then npm start).'
+      : `Server returned non-JSON response (HTTP ${response.status}).`;
+    data = { success: false, message: errorHint };
   }
 
   if (!response.ok) {
@@ -35,6 +38,19 @@ async function adminRequest(endpoint, options = {}) {
 
   return data;
 }
+
+/**
+ * Check backend server connectivity
+ */
+export const checkServerHealth = async () => {
+  try {
+    const res = await fetch('http://127.0.0.1:5000/');
+    const data = await res.json();
+    return res.ok && data.message ? true : false;
+  } catch (e) {
+    return false;
+  }
+};
 
 /**
  * Admin Authentication

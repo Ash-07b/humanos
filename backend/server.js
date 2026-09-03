@@ -12,8 +12,8 @@ const app = express();
 connectDB();
 
 // Body parser middleware with generous payload limit for base64 images
-app.use(express.json({ limit: '15mb' }));
-app.use(express.urlencoded({ limit: '15mb', extended: true }));
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // CORS middleware
 app.use((req, res, next) => {
@@ -43,6 +43,16 @@ app.use('/api/admin', require('./routes/adminRoutes'));
 app.get('/', (req, res) => {
   res.json({
     message: 'HumanOS API is running',
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Global Error Handler (Prevents crashes on unexpected payloads or errors)
+app.use((err, req, res, next) => {
+  console.error('API Error:', err.message);
+  return res.status(err.status || 500).json({
+    success: false,
+    message: err.message || 'Internal server error',
   });
 });
 
