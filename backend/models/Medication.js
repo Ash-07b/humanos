@@ -29,21 +29,42 @@ const medicationSchema = new mongoose.Schema(
       default: '08:00 AM',
     },
     startDate: {
-      type: Date,
-      default: Date.now,
+      type: String,
+      default: 'Today',
     },
     endDate: {
-      type: Date,
+      type: String,
+      default: 'Ongoing',
+    },
+    status: {
+      type: String,
+      enum: ['Active', 'Completed', 'Paused', 'ACTIVE', 'COMPLETED', 'PAUSED'],
+      default: 'Active',
     },
     instructions: {
       type: String,
       trim: true,
-      default: '',
+      default: 'Take as prescribed',
     },
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        return ret;
+      },
+    },
   }
 );
 
 module.exports = mongoose.model('Medication', medicationSchema);
+

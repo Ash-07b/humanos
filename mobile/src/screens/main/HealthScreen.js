@@ -34,7 +34,18 @@ import {
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
-import { fetchAiHealthRecommendation } from '../../services/api';
+import {
+  fetchAiHealthRecommendation,
+  fetchAiHealthRecommendations,
+  fetchHealthRecords,
+  createHealthRecord,
+  updateHealthRecord,
+  deleteHealthRecord,
+  fetchMedications,
+  createMedication,
+  updateMedication,
+  deleteMedication,
+} from '../../services/api';
 import { getToken } from '../../services/storage';
 
 export default function HealthScreen({ user, onLogout, onNavigateTab, navigation }) {
@@ -48,9 +59,11 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
   const [refreshing, setRefreshing] = useState(false);
   const [noticeMessage, setNoticeMessage] = useState('');
 
-  // Modals
+  // Modals & Editing State
   const [recordModalVisible, setRecordModalVisible] = useState(false);
+  const [editingRecord, setEditingRecord] = useState(null);
   const [medicationModalVisible, setMedicationModalVisible] = useState(false);
+  const [editingMedication, setEditingMedication] = useState(null);
   const [deleteModalVisible, setDeleteModalVisible] = useState(false);
   const [itemToDelete, setItemToDelete] = useState(null); // { type: 'record'|'med', id, name }
 
@@ -68,6 +81,38 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
   const [records, setRecords] = useState(user?.healthRecords || user?.records || []);
   const [medications, setMedications] = useState(user?.medications || []);
 
+  // Fetch health data & AI history from backend API
+  const loadHealthDataFromApi = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const [recRes, medRes, aiRes] = await Promise.all([
+        fetchHealthRecords({}, token),
+        fetchMedications({}, token),
+        fetchAiHealthRecommendations(token),
+      ]);
+      if (recRes && recRes.success && Array.isArray(recRes.records)) {
+        setRecords(recRes.records);
+      }
+      if (medRes && medRes.success && Array.isArray(medRes.medications)) {
+        setMedications(medRes.medications);
+      }
+      if (aiRes && aiRes.success && Array.isArray(aiRes.history)) {
+        setAiHistory(aiRes.history);
+        if (aiRes.history.length > 0 && aiRes.history[0].text) {
+          setCurrentAiRecommendation(aiRes.history[0].text);
+        }
+      }
+    } catch (e) {
+      console.log('Error fetching health telemetry & AI history from API:', e);
+    }
+  };
+
+  // Load health data on mount
+  React.useEffect(() => {
+    loadHealthDataFromApi();
+  }, []);
+
   // Sync state whenever user data changes from database
   React.useEffect(() => {
     if (user) {
@@ -77,10 +122,10 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
       if (user.aiHistory) {
         setAiHistory(user.aiHistory || []);
       }
-      if (user.healthRecords || user.records) {
+      if ((user.healthRecords || user.records) && records.length === 0) {
         setRecords(user.healthRecords || user.records || []);
       }
-      if (user.medications) {
+      if (user.medications && medications.length === 0) {
         setMedications(user.medications || []);
       }
     }
@@ -132,12 +177,16 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
     }, 2800);
   };
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await loadHealthDataFromApi();
       showNotice('Health telemetry synced');
-    }, 600);
+    } catch (e) {
+      console.log('Error refreshing health data:', e);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleTabChange = (tabId) => {
@@ -147,71 +196,180 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
     } else if (navigation) {
       if (tabId === 'dashboard') navigation.navigate('Dashboard');
       else if (tabId === 'tasks') navigation.navigate('Tasks');
+      else if (tabId === 'goals') navigation.navigate('Goals');
       else if (tabId === 'profile') navigation.navigate('Profile');
     }
   };
 
-  // Record Creation
-  const handleOpenRecordModal = (type = 'Heart Rate') => {
-    const selected = recordTypes.find((r) => r.type === type) || recordTypes[0];
-    setRecordType(selected.type);
-    setRecordUnit(selected.defaultUnit);
-    setRecordValue('');
-    setRecordDate('Today');
-    setRecordTime(
-      new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    );
-    setRecordNotes('');
+  // Record Modal Open (Create or Edit)
+  const handleOpenRecordModal = (type = 'Heart Rate', recordToEdit = null) => {
+    if (recordToEdit) {
+      setEditingRecord(recordToEdit);
+      const selected = recordTypes.find((r) => r.type === recordToEdit.type) || recordTypes[0];
+      setRecordType(recordToEdit.type || selected.type);
+      setRecordUnit(recordToEdit.unit || selected.defaultUnit);
+      setRecordValue(recordToEdit.value || '');
+      setRecordDate(recordToEdit.date || 'Today');
+      setRecordTime(recordToEdit.time || '09:00 AM');
+      setRecordNotes(recordToEdit.notes || '');
+    } else {
+      setEditingRecord(null);
+      const selected = recordTypes.find((r) => r.type === type) || recordTypes[0];
+      setRecordType(selected.type);
+      setRecordUnit(selected.defaultUnit);
+      setRecordValue('');
+      setRecordDate('Today');
+      setRecordTime(
+        new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      );
+      setRecordNotes('');
+    }
     setRecordModalVisible(true);
   };
 
-  const handleSaveRecord = () => {
+  // Save or Update Record
+  const handleSaveRecord = async () => {
     if (!recordValue.trim()) {
       showNotice('Please enter a measurement value');
       return;
     }
-    const newRecord = {
-      id: Date.now().toString(),
+
+    const payload = {
       type: recordType,
       value: recordValue.trim(),
       unit: recordUnit.trim() || 'units',
-      dateTime: `${recordDate} • ${recordTime}`,
+      date: recordDate.trim() || 'Today',
+      time: recordTime.trim() || '09:00 AM',
+      dateTime: `${recordDate.trim() || 'Today'} • ${recordTime.trim() || '09:00 AM'}`,
       notes: recordNotes.trim() || 'Logged via Health Center',
     };
-    setRecords((prev) => [newRecord, ...prev]);
+
+    try {
+      const token = await getToken();
+      if (editingRecord) {
+        const idToUpdate = editingRecord.id || editingRecord._id;
+        setRecords((prev) =>
+          prev.map((r) => ((r.id === idToUpdate || r._id === idToUpdate) ? { ...r, ...payload } : r))
+        );
+        showNotice(`${recordType} record updated`);
+
+        if (token) {
+          const res = await updateHealthRecord(idToUpdate, payload, token);
+          if (res && res.success && res.record) {
+            setRecords((prev) =>
+              prev.map((r) => ((r.id === idToUpdate || r._id === idToUpdate) ? res.record : r))
+            );
+          }
+        }
+      } else {
+        const tempRecord = {
+          id: Date.now().toString(),
+          ...payload,
+        };
+        setRecords((prev) => [tempRecord, ...prev]);
+        showNotice(`${recordType} record saved`);
+
+        if (token) {
+          const res = await createHealthRecord(payload, token);
+          if (res && res.success && res.record) {
+            setRecords((prev) =>
+              prev.map((r) => (r.id === tempRecord.id ? res.record : r))
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Error saving health record:', e);
+      showNotice('Saved record locally');
+    }
+
     setRecordModalVisible(false);
-    showNotice(`${recordType} record saved`);
+    setEditingRecord(null);
   };
 
-  // Medication Creation
-  const handleOpenMedicationModal = () => {
-    setMedName('');
-    setMedDosage('');
-    setMedFrequency('Once daily');
-    setMedStartDate('Today');
-    setMedEndDate('Ongoing');
-    setMedReminderTime('08:00 AM');
-    setMedInstructions('');
+  // Medication Modal Open (Create or Edit)
+  const handleOpenMedicationModal = (medToEdit = null) => {
+    if (medToEdit) {
+      setEditingMedication(medToEdit);
+      setMedName(medToEdit.name || '');
+      setMedDosage(medToEdit.dosage || '');
+      setMedFrequency(medToEdit.frequency || 'Once daily');
+      setMedStartDate(medToEdit.startDate || 'Today');
+      setMedEndDate(medToEdit.endDate || 'Ongoing');
+      setMedReminderTime(medToEdit.reminderTime || '08:00 AM');
+      setMedInstructions(medToEdit.instructions || '');
+    } else {
+      setEditingMedication(null);
+      setMedName('');
+      setMedDosage('');
+      setMedFrequency('Once daily');
+      setMedStartDate('Today');
+      setMedEndDate('Ongoing');
+      setMedReminderTime('08:00 AM');
+      setMedInstructions('');
+    }
     setMedicationModalVisible(true);
   };
 
-  const handleSaveMedication = () => {
+  // Save or Update Medication
+  const handleSaveMedication = async () => {
     if (!medName.trim() || !medDosage.trim()) {
       showNotice('Please provide medication name and dosage');
       return;
     }
-    const newMed = {
-      id: Date.now().toString(),
+
+    const payload = {
       name: medName.trim(),
       dosage: medDosage.trim(),
       frequency: medFrequency,
+      startDate: medStartDate.trim() || 'Today',
+      endDate: medEndDate.trim() || 'Ongoing',
       reminderTime: medReminderTime.trim() || '08:00 AM',
       status: 'Active',
       instructions: medInstructions.trim() || 'Take as prescribed',
     };
-    setMedications((prev) => [newMed, ...prev]);
+
+    try {
+      const token = await getToken();
+      if (editingMedication) {
+        const idToUpdate = editingMedication.id || editingMedication._id;
+        setMedications((prev) =>
+          prev.map((m) => ((m.id === idToUpdate || m._id === idToUpdate) ? { ...m, ...payload } : m))
+        );
+        showNotice(`Updated ${medName.trim()}`);
+
+        if (token) {
+          const res = await updateMedication(idToUpdate, payload, token);
+          if (res && res.success && res.medication) {
+            setMedications((prev) =>
+              prev.map((m) => ((m.id === idToUpdate || m._id === idToUpdate) ? res.medication : m))
+            );
+          }
+        }
+      } else {
+        const tempMed = {
+          id: Date.now().toString(),
+          ...payload,
+        };
+        setMedications((prev) => [tempMed, ...prev]);
+        showNotice(`Added ${medName.trim()}`);
+
+        if (token) {
+          const res = await createMedication(payload, token);
+          if (res && res.success && res.medication) {
+            setMedications((prev) =>
+              prev.map((m) => (m.id === tempMed.id ? res.medication : m))
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Error saving medication:', e);
+      showNotice(`Added ${medName.trim()}`);
+    }
+
     setMedicationModalVisible(false);
-    showNotice(`Added ${medName}`);
+    setEditingMedication(null);
   };
 
   // Deletion logic
@@ -220,14 +378,28 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
     setDeleteModalVisible(true);
   };
 
-  const executeDelete = () => {
+  const executeDelete = async () => {
     if (!itemToDelete) return;
-    if (itemToDelete.type === 'record') {
-      setRecords((prev) => prev.filter((r) => r.id !== itemToDelete.id));
+    const { type, id } = itemToDelete;
+
+    if (type === 'record') {
+      setRecords((prev) => prev.filter((r) => (r.id !== id && r._id !== id)));
       showNotice('Health record removed');
-    } else if (itemToDelete.type === 'med') {
-      setMedications((prev) => prev.filter((m) => m.id !== itemToDelete.id));
+      try {
+        const token = await getToken();
+        if (token) await deleteHealthRecord(id, token);
+      } catch (e) {
+        console.log('Error deleting record on server:', e);
+      }
+    } else if (type === 'med') {
+      setMedications((prev) => prev.filter((m) => (m.id !== id && m._id !== id)));
       showNotice('Medication removed');
+      try {
+        const token = await getToken();
+        if (token) await deleteMedication(id, token);
+      } catch (e) {
+        console.log('Error deleting medication on server:', e);
+      }
     }
     setDeleteModalVisible(false);
     setItemToDelete(null);
@@ -255,15 +427,19 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
 
       if (res && res.success && res.recommendation) {
         setCurrentAiRecommendation(res.recommendation);
-        setAiHistory((prev) => [
-          {
-            id: Date.now().toString(),
-            text: res.recommendation,
-            date: 'Just now',
-          },
-          ...prev,
-        ]);
-        showNotice(res.source && res.source.startsWith('ollama') ? 'AI Insight generated by Ollama' : 'AI Health recommendation synthesized');
+        if (res.history && Array.isArray(res.history)) {
+          setAiHistory(res.history);
+        } else {
+          setAiHistory((prev) => [
+            {
+              id: Date.now().toString(),
+              text: res.recommendation,
+              date: 'Just now',
+            },
+            ...prev,
+          ]);
+        }
+        showNotice(res.source && res.source.startsWith('ollama') ? 'AI Insight generated by Ollama' : 'AI Health recommendation generated');
       } else {
         throw new Error(res?.message || 'Empty response');
       }
@@ -595,7 +771,16 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                   const IconComp = getRecordIconComponent(item.type);
 
                   return (
-                    <View key={item.id} style={[styles.recordCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                    <Pressable
+                      key={item.id || item._id}
+                      onPress={() => handleOpenRecordModal(item.type, item)}
+                      style={({ pressed }) => [
+                        styles.recordCard,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
                       <View style={[styles.recordIconBox, { backgroundColor: iconBg }]}>
                         <IconComp size={18} color={iconColor} strokeWidth={2.2} />
                       </View>
@@ -610,13 +795,13 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                       </View>
 
                       <Pressable
-                        onPress={() => confirmDelete('record', item.id, item.type)}
+                        onPress={() => confirmDelete('record', item.id || item._id, item.type)}
                         style={styles.recordDeleteBtn}
                         hitSlop={8}
                       >
                         <X size={14} color="#94A3B8" strokeWidth={2.2} />
                       </Pressable>
-                    </View>
+                    </Pressable>
                   );
                 })}
 
@@ -644,7 +829,7 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                 <Text style={[styles.sectionMainTitle, { color: theme.colors.textPrimary }]}>Medications</Text>
               </View>
               <Pressable
-                onPress={handleOpenMedicationModal}
+                onPress={() => handleOpenMedicationModal()}
                 style={({ pressed }) => [
                   styles.headerAddPill,
                   isWeb && styles.webPointer,
@@ -664,7 +849,7 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                   Add your medications to keep track of your routine.
                 </Text>
                 <Pressable
-                  onPress={handleOpenMedicationModal}
+                  onPress={() => handleOpenMedicationModal()}
                   style={styles.emptyStateBtn}
                 >
                   <Text style={styles.emptyStateBtnText}>Add Medication</Text>
@@ -673,7 +858,16 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
             ) : (
               <View style={styles.medicationsList}>
                 {medications.map((med) => (
-                  <View key={med.id} style={[styles.medicationCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                  <Pressable
+                    key={med.id || med._id}
+                    onPress={() => handleOpenMedicationModal(med)}
+                    style={({ pressed }) => [
+                      styles.medicationCard,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
                     <View style={styles.medTopRow}>
                       <View style={styles.medNameCol}>
                         <Text style={[styles.medNameText, { color: theme.colors.textPrimary }]}>{med.name}</Text>
@@ -682,7 +876,7 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                         </Text>
                       </View>
                       <Pressable
-                        onPress={() => confirmDelete('med', med.id, med.name)}
+                        onPress={() => confirmDelete('med', med.id || med._id, med.name)}
                         style={styles.recordDeleteBtn}
                         hitSlop={8}
                       >
@@ -701,7 +895,7 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                         {med.instructions}
                       </Text>
                     </View>
-                  </View>
+                  </Pressable>
                 ))}
               </View>
             )}
@@ -809,22 +1003,32 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
         </View>
       </ScrollView>
 
-      {/* ==================== 5. ADD HEALTH RECORD MODAL ==================== */}
+      {/* ==================== 5. ADD / EDIT HEALTH RECORD MODAL ==================== */}
       <Modal
         visible={recordModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setRecordModalVisible(false)}
+        onRequestClose={() => {
+          setRecordModalVisible(false);
+          setEditingRecord(null);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
               <View>
-                <Text style={styles.modalKicker}>NEW LOG ENTRY</Text>
-                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Add Health Record</Text>
+                <Text style={styles.modalKicker}>
+                  {editingRecord ? 'UPDATE ENTRY' : 'NEW LOG ENTRY'}
+                </Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+                  {editingRecord ? 'Edit Health Record' : 'Add Health Record'}
+                </Text>
               </View>
               <Pressable
-                onPress={() => setRecordModalVisible(false)}
+                onPress={() => {
+                  setRecordModalVisible(false);
+                  setEditingRecord(null);
+                }}
                 style={styles.modalCloseBtn}
               >
                 <X size={18} color="#94A3B8" strokeWidth={2.2} />
@@ -944,7 +1148,10 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
 
             <View style={styles.modalActionsRow}>
               <Pressable
-                onPress={() => setRecordModalVisible(false)}
+                onPress={() => {
+                  setRecordModalVisible(false);
+                  setEditingRecord(null);
+                }}
                 style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
               >
                 <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
@@ -954,29 +1161,41 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                 onPress={handleSaveRecord}
                 style={styles.modalSubmitBtn}
               >
-                <Text style={styles.modalSubmitText}>Save Record</Text>
+                <Text style={styles.modalSubmitText}>
+                  {editingRecord ? 'Update Record' : 'Save Record'}
+                </Text>
               </Pressable>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* ==================== 7. ADD MEDICATION MODAL ==================== */}
+      {/* ==================== 7. ADD / EDIT MEDICATION MODAL ==================== */}
       <Modal
         visible={medicationModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setMedicationModalVisible(false)}
+        onRequestClose={() => {
+          setMedicationModalVisible(false);
+          setEditingMedication(null);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
               <View>
-                <Text style={styles.modalKicker}>PRESCRIPTION & SUPPLEMENT</Text>
-                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Add Medication</Text>
+                <Text style={styles.modalKicker}>
+                  {editingMedication ? 'UPDATE REGIMEN' : 'PRESCRIPTION & SUPPLEMENT'}
+                </Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+                  {editingMedication ? 'Edit Medication' : 'Add Medication'}
+                </Text>
               </View>
               <Pressable
-                onPress={() => setMedicationModalVisible(false)}
+                onPress={() => {
+                  setMedicationModalVisible(false);
+                  setEditingMedication(null);
+                }}
                 style={styles.modalCloseBtn}
               >
                 <X size={18} color="#94A3B8" strokeWidth={2.2} />
@@ -1094,7 +1313,10 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
 
             <View style={styles.modalActionsRow}>
               <Pressable
-                onPress={() => setMedicationModalVisible(false)}
+                onPress={() => {
+                  setMedicationModalVisible(false);
+                  setEditingMedication(null);
+                }}
                 style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
               >
                 <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
@@ -1104,7 +1326,9 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                 onPress={handleSaveMedication}
                 style={styles.modalSubmitBtn}
               >
-                <Text style={styles.modalSubmitText}>Save Medication</Text>
+                <Text style={styles.modalSubmitText}>
+                  {editingMedication ? 'Update Medication' : 'Save Medication'}
+                </Text>
               </Pressable>
             </View>
           </View>

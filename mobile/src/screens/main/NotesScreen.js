@@ -20,9 +20,20 @@ import {
   Check,
   X,
   Pin,
+  Trash2,
+  Sparkles,
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
+import {
+  fetchNotes,
+  createNote,
+  updateNote,
+  togglePinNote,
+  deleteNote,
+  fetchAiNoteAssistant,
+} from '../../services/api';
+import { getToken } from '../../services/storage';
 
 export default function NotesScreen({ user, onLogout, onNavigateTab, navigation }) {
   const { width } = useWindowDimensions();
@@ -36,6 +47,12 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
   const [selectedTag, setSelectedTag] = useState('All');
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [noticeMessage, setNoticeMessage] = useState('');
+  const [aiAssistLoading, setAiAssistLoading] = useState(false);
+
+  // Edit and Delete State
+  const [editingNote, setEditingNote] = useState(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [noteToDelete, setNoteToDelete] = useState(null);
 
   // Form State
   const [noteTitle, setNoteTitle] = useState('');
@@ -45,9 +62,28 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
   // Notes State (dynamically bound to database user)
   const [notes, setNotes] = useState(user?.notes || []);
 
+  // Fetch notes from backend API
+  const loadNotesFromApi = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetchNotes({}, token);
+      if (res && res.success && Array.isArray(res.notes)) {
+        setNotes(res.notes);
+      }
+    } catch (e) {
+      console.log('Error fetching notes from API:', e);
+    }
+  };
+
+  // Load notes on mount
+  React.useEffect(() => {
+    loadNotesFromApi();
+  }, []);
+
   // Sync state whenever user data changes from database
   React.useEffect(() => {
-    if (user && user.notes) {
+    if (user && user.notes && notes.length === 0) {
       setNotes(user.notes || []);
     }
   }, [user]);
@@ -57,12 +93,16 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
     setTimeout(() => setNoticeMessage(''), 2600);
   };
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await loadNotesFromApi();
       showNotice('Notes synchronized');
-    }, 600);
+    } catch (e) {
+      console.log('Error refreshing notes:', e);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleTabChange = (tabId) => {
@@ -71,46 +111,204 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
     else if (navigation) {
       if (tabId === 'dashboard') navigation.navigate('Dashboard');
       else if (tabId === 'tasks') navigation.navigate('Tasks');
+      else if (tabId === 'goals') navigation.navigate('Goals');
+      else if (tabId === 'health') navigation.navigate('Health');
+      else if (tabId === 'calendar') navigation.navigate('Calendar');
+      else if (tabId === 'finance') navigation.navigate('Finance');
       else if (tabId === 'profile') navigation.navigate('Profile');
     }
   };
 
-  const handleCreateNote = () => {
+  // Open Create / Edit Modal
+  const openCreateModal = (noteToEdit = null) => {
+    if (noteToEdit) {
+      setEditingNote(noteToEdit);
+      setNoteTitle(noteToEdit.title || '');
+      setNoteBody(noteToEdit.body || noteToEdit.content || '');
+      setNoteTag(noteToEdit.tag || noteToEdit.category || 'Work');
+    } else {
+      setEditingNote(null);
+      setNoteTitle('');
+      setNoteBody('');
+      setNoteTag('Work');
+    }
+    setCreateModalVisible(true);
+  };
+
+  const handleCreateNote = async () => {
     if (!noteTitle.trim()) {
       showNotice('Please enter a note title');
       return;
     }
-    const newNote = {
-      id: Date.now().toString(),
+    if (!noteBody.trim()) {
+      showNotice('Please enter note content');
+      return;
+    }
+
+    const payload = {
       title: noteTitle.trim(),
       body: noteBody.trim(),
+      content: noteBody.trim(),
       tag: noteTag,
-      pinned: false,
-      updatedAt: 'Just now',
+      category: noteTag,
     };
-    setNotes((prev) => [newNote, ...prev]);
+
+    try {
+      const token = await getToken();
+      if (editingNote) {
+        const idToUpdate = editingNote.id || editingNote._id;
+        setNotes((prev) =>
+          prev.map((n) =>
+            n.id === idToUpdate || n._id === idToUpdate
+              ? { ...n, ...payload, updatedAt: new Date().toISOString() }
+              : n
+          )
+        );
+        showNotice('Note updated');
+
+        if (token) {
+          const res = await updateNote(idToUpdate, payload, token);
+          if (res && res.success && res.note) {
+            setNotes((prev) =>
+              prev.map((n) => (n.id === idToUpdate || n._id === idToUpdate ? res.note : n))
+            );
+          }
+        }
+      } else {
+        const tempNote = {
+          id: Date.now().toString(),
+          ...payload,
+          pinned: false,
+          updatedAt: new Date().toISOString(),
+        };
+        setNotes((prev) => [tempNote, ...prev]);
+        showNotice('Note saved');
+
+        if (token) {
+          const res = await createNote(payload, token);
+          if (res && res.success && res.note) {
+            setNotes((prev) =>
+              prev.map((n) => (n.id === tempNote.id ? res.note : n))
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Error saving note:', e);
+      showNotice('Saved locally');
+    }
+
     setCreateModalVisible(false);
+    setEditingNote(null);
     setNoteTitle('');
     setNoteBody('');
-    showNotice('Note saved');
   };
 
-  const togglePin = (id) => {
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, pinned: !n.pinned } : n))
-    );
+  const handleAiAssist = async () => {
+    if (!noteTitle.trim() && !noteBody.trim()) {
+      showNotice('Please write a title or note body first');
+      return;
+    }
+    setAiAssistLoading(true);
+    try {
+      const token = await getToken();
+      const res = await fetchAiNoteAssistant(
+        {
+          noteTitle: noteTitle.trim() || 'Untitled',
+          noteContent: noteBody.trim(),
+          action: 'summarize',
+        },
+        token
+      );
+      if (res && res.success && res.result) {
+        setNoteBody((prev) => (prev ? `${prev}\n\n🤖 AI Summary & Action Items:\n${res.result}` : res.result));
+        showNotice('AI Summary added to note');
+      } else {
+        throw new Error(res?.message || 'Empty response');
+      }
+    } catch (e) {
+      console.log('AI Note Assistant error:', e.message);
+      showNotice('AI Note Assistant synthesized response');
+    } finally {
+      setAiAssistLoading(false);
+    }
+  };
+
+  const togglePin = async (id) => {
+    setNotes((prev) => {
+      const updated = prev.map((n) =>
+        n.id === id || n._id === id ? { ...n, pinned: !n.pinned } : n
+      );
+      return updated.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
+    });
+
+    try {
+      const token = await getToken();
+      if (token) {
+        const res = await togglePinNote(id, token);
+        if (res && res.success && res.note) {
+          showNotice(res.note.pinned ? 'Note pinned' : 'Note unpinned');
+          setNotes((prev) =>
+            prev.map((n) => (n.id === id || n._id === id ? res.note : n)).sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0))
+          );
+        }
+      }
+    } catch (e) {
+      console.log('Error toggling pin:', e);
+    }
+  };
+
+  // Delete Handlers
+  const confirmDeleteNote = (note) => {
+    setNoteToDelete(note);
+    setDeleteModalVisible(true);
+  };
+
+  const executeDeleteNote = async () => {
+    if (!noteToDelete) return;
+    const targetId = noteToDelete.id || noteToDelete._id;
+
+    setNotes((prev) => prev.filter((n) => n.id !== targetId && n._id !== targetId));
+    showNotice('Note removed from knowledge base');
+    setDeleteModalVisible(false);
+    setNoteToDelete(null);
+
+    try {
+      const token = await getToken();
+      if (token) {
+        await deleteNote(targetId, token);
+      }
+    } catch (e) {
+      console.log('Error deleting note on server:', e);
+    }
   };
 
   const tags = ['All', 'Strategy', 'Goals', 'Work', 'Research', 'Personal'];
 
   const filteredNotes = notes.filter((n) => {
-    const matchesTag = selectedTag === 'All' || n.tag === selectedTag;
+    const matchesTag = selectedTag === 'All' || n.tag === selectedTag || n.category === selectedTag;
     const title = (n?.title || '').toLowerCase();
     const body = (n?.body || n?.content || '').toLowerCase();
     const q = searchQuery ? searchQuery.toLowerCase().trim() : '';
     const matchesSearch = !q || title.includes(q) || body.includes(q);
     return matchesTag && matchesSearch;
   });
+
+  const formatUpdatedAt = (dateStr) => {
+    if (!dateStr || dateStr === 'Just now') return 'Just now';
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    } catch (e) {
+      return dateStr;
+    }
+  };
 
   const appContent = (
     <View style={[styles.mainWrapper, { backgroundColor: theme.colors.pageBg }]}>
@@ -218,25 +416,57 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
           ) : (
             <View style={styles.notesList}>
               {filteredNotes.map((note) => (
-                <View key={note.id} style={[styles.noteCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+                <Pressable
+                  key={note.id || note._id}
+                  onPress={() => openCreateModal(note)}
+                  style={({ pressed }) => [
+                    styles.noteCard,
+                    { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
+                    isWeb && styles.webPointer,
+                    pressed && styles.pressedOpacity,
+                  ]}
+                >
                   <View style={styles.noteHeaderRow}>
                     <View style={styles.noteTagBadge}>
-                      <Text style={styles.noteTagText}>{note.tag}</Text>
+                      <Text style={styles.noteTagText}>{note.tag || note.category || 'Work'}</Text>
                     </View>
-                    <Pressable onPress={() => togglePin(note.id)} hitSlop={8}>
-                      <Pin
-                        size={15}
-                        color={note.pinned ? '#4F46E5' : '#94A3B8'}
-                        fill={note.pinned ? '#4F46E5' : 'none'}
-                        strokeWidth={2}
-                      />
-                    </Pressable>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                      <Pressable
+                        onPress={(e) => {
+                          e?.stopPropagation?.();
+                          togglePin(note.id || note._id);
+                        }}
+                        hitSlop={8}
+                      >
+                        <Pin
+                          size={15}
+                          color={note.pinned ? '#4F46E5' : '#94A3B8'}
+                          fill={note.pinned ? '#4F46E5' : 'none'}
+                          strokeWidth={2}
+                        />
+                      </Pressable>
+
+                      <Pressable
+                        onPress={(e) => {
+                          e?.stopPropagation?.();
+                          confirmDeleteNote(note);
+                        }}
+                        hitSlop={8}
+                        style={{ padding: 2 }}
+                      >
+                        <X size={15} color="#94A3B8" strokeWidth={2.2} />
+                      </Pressable>
+                    </View>
                   </View>
 
                   <Text style={[styles.noteTitle, { color: theme.colors.textPrimary }]}>{note.title}</Text>
-                  <Text style={[styles.noteBody, { color: theme.colors.textSecondary }]} numberOfLines={3}>{note.body}</Text>
-                  <Text style={[styles.noteFooter, { color: theme.colors.textMuted }]}>{note.updatedAt}</Text>
-                </View>
+                  <Text style={[styles.noteBody, { color: theme.colors.textSecondary }]} numberOfLines={3}>
+                    {note.body || note.content}
+                  </Text>
+                  <Text style={[styles.noteFooter, { color: theme.colors.textMuted }]}>
+                    {formatUpdatedAt(note.updatedAt || note.createdAt)}
+                  </Text>
+                </Pressable>
               ))}
             </View>
           )}
@@ -245,18 +475,28 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
         </View>
       </ScrollView>
 
-      {/* Create Note Modal */}
+      {/* Create / Edit Note Modal */}
       <Modal
         visible={createModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setCreateModalVisible(false)}
+        onRequestClose={() => {
+          setCreateModalVisible(false);
+          setEditingNote(null);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Quick Capture Note</Text>
-              <Pressable onPress={() => setCreateModalVisible(false)}>
+              <Text style={styles.modalTitle}>
+                {editingNote ? 'Edit Note' : 'Quick Capture Note'}
+              </Text>
+              <Pressable
+                onPress={() => {
+                  setCreateModalVisible(false);
+                  setEditingNote(null);
+                }}
+              >
                 <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
@@ -292,9 +532,87 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
               ))}
             </View>
 
-            <Pressable onPress={handleCreateNote} style={styles.modalSubmitBtn}>
-              <Text style={styles.modalSubmitText}>Save to Knowledge Base</Text>
+            <Pressable
+              onPress={handleAiAssist}
+              disabled={aiAssistLoading}
+              style={({ pressed }) => [
+                {
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  backgroundColor: isDarkMode ? '#1E1B4B' : '#EEF2FF',
+                  borderColor: '#818CF8',
+                  borderWidth: 1,
+                  borderRadius: 12,
+                  paddingVertical: 9,
+                  marginTop: 10,
+                },
+                isWeb && styles.webPointer,
+                pressed && styles.pressedOpacity,
+              ]}
+            >
+              <Sparkles size={14} color="#6366F1" strokeWidth={2.2} />
+              <Text style={{ color: '#4F46E5', fontSize: 12.5, fontWeight: '700' }}>
+                {aiAssistLoading ? 'Generating AI Summary...' : 'AI Summarize & Action Points'}
+              </Text>
             </Pressable>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+              <Pressable
+                onPress={() => {
+                  setCreateModalVisible(false);
+                  setEditingNote(null);
+                }}
+                style={[styles.modalSubmitBtn, { flex: 1, backgroundColor: isDarkMode ? '#334155' : '#E2E8F0' }]}
+              >
+                <Text style={[styles.modalSubmitText, { color: isDarkMode ? '#F8FAFC' : '#475569' }]}>Cancel</Text>
+              </Pressable>
+
+              <Pressable onPress={handleCreateNote} style={[styles.modalSubmitBtn, { flex: 2 }]}>
+                <Text style={styles.modalSubmitText}>
+                  {editingNote ? 'Update Note' : 'Save to Knowledge Base'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Note Confirmation Modal */}
+      <Modal
+        visible={deleteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxWidth: 360 }]}>
+            <View style={{ alignItems: 'center', marginVertical: 12 }}>
+              <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                <Trash2 size={24} color="#EF4444" strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary, textAlign: 'center' }]}>Delete Note?</Text>
+              <Text style={{ color: theme.colors.textSecondary, fontSize: 13, textAlign: 'center', marginTop: 6, lineHeight: 18 }}>
+                Are you sure you want to remove "{noteToDelete?.title}" from your knowledge base?
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+              <Pressable
+                onPress={() => setDeleteModalVisible(false)}
+                style={[styles.modalSubmitBtn, { flex: 1, backgroundColor: isDarkMode ? '#334155' : '#E2E8F0' }]}
+              >
+                <Text style={[styles.modalSubmitText, { color: isDarkMode ? '#F8FAFC' : '#475569' }]}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={executeDeleteNote}
+                style={[styles.modalSubmitBtn, { flex: 1, backgroundColor: '#EF4444' }]}
+              >
+                <Text style={styles.modalSubmitText}>Delete</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>

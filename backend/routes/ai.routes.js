@@ -11,19 +11,17 @@ const {
 } = require('../controllers/ai.controllers');
 const { protect } = require('../middleware/authMiddleware');
 
-const optionalAuth = async (req, res, next) => {
-  if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
-    return protect(req, res, next);
-  }
-  next();
-};
+// All AI recommendation and history routes are protected with JWT
+router.use(protect);
 
-router.post('/health-recommendation', optionalAuth, getHealthRecommendation);
-router.post('/goal-recommendation', optionalAuth, getGoalRecommendation);
-router.post('/task-recommendation', optionalAuth, getTaskRecommendation);
-router.post('/finance-recommendation', optionalAuth, getFinanceRecommendation);
-router.post('/note-assistant', optionalAuth, getNoteAssistant);
-router.post('/assistant', optionalAuth, getGeneralAssistant);
-router.get('/history', protect, getAiHistory);
+router.post('/health-recommendation', getHealthRecommendation);
+router.get('/health-recommendations', getAiHistory);
+router.get('/history', getAiHistory);
+
+router.post('/goal-recommendation', getGoalRecommendation);
+router.post('/task-recommendation', getTaskRecommendation);
+router.post('/finance-recommendation', getFinanceRecommendation);
+router.post('/note-assistant', getNoteAssistant);
+router.post('/assistant', getGeneralAssistant);
 
 module.exports = router;

@@ -1,107 +1,59 @@
 const AIHistory = require('../models/AIhistory');
-
-/**
- * Universal Ollama Query Helper
- */
-async function callOllama(systemPrompt, userPrompt, fallbackFn, modelOverride) {
-  const ollamaUrl = process.env.OLLAMA_BASE_URL || 'http://127.0.0.1:11434';
-  const model = modelOverride || process.env.OLLAMA_MODEL || 'qwen2.5:3b';
-
-  let responseText = '';
-  let source = 'fallback';
-
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 7000);
-
-    const response = await fetch(`${ollamaUrl}/api/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: model,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        stream: false,
-        options: {
-          temperature: 0.7,
-          num_predict: 200,
-        },
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(timeoutId);
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data && data.message && data.message.content) {
-        responseText = data.message.content.trim();
-        source = `ollama:${model}`;
-      }
-    }
-  } catch (err) {
-    console.log(`[HumanOS AI] Ollama call skipped (${err.message || 'offline'}), using smart synthesis.`);
-  }
-
-  if (!responseText && typeof fallbackFn === 'function') {
-    responseText = fallbackFn();
-    source = 'telemetry_synthesis';
-  }
-
-  return { text: responseText, source, model };
-}
+const HealthRecord = require('../models/HealthRecord');
+const Medication = require('../models/Medication');
+const Goal = require('../models/Goal');
+const Task = require('../models/Task');
+const aiService = require('../services/aiService');
 
 /**
  * 1. Health & Vitality AI Recommendation
+ * @route POST /api/ai/health-recommendation
+ * @access Private
  */
 exports.getHealthRecommendation = async (req, res) => {
   try {
-    const { heartRate, sleep, bloodPressure, steps, hydration, medications, prompt } = req.body || {};
-
-    const systemPrompt = `You are HumanOS Vitality AI, an advanced personal health and biometric optimization assistant.
-Analyze the user's telemetry and return a concise, actionable, 2-3 sentence personalized recommendation.
-Tone: Precise, scientific, encouraging, and data-driven.`;
-
-    const userContext = `User Telemetry Data:
-- Resting Heart Rate: ${heartRate || 'Not recorded'}
-- Sleep Duration: ${sleep || 'Not recorded'}
-- Blood Pressure: ${bloodPressure || 'Normal'}
-- Daily Steps: ${steps || 'Normal'}
-- Hydration: ${hydration || 'Optimal'}
-- Active Medications: ${Array.isArray(medications) ? medications.join(', ') : 'None'}
-${prompt ? `Additional context: ${prompt}` : ''}`;
-
-    const fallback = () => {
-      const cleanSleep = sleep ? (String(sleep).endsWith('h') ? String(sleep) : `${sleep}h`) : '';
-      const cleanHr = heartRate ? (String(heartRate).includes('bpm') ? String(heartRate) : `${heartRate} bpm`) : '';
-      const recs = [];
-      if (cleanSleep && parseFloat(cleanSleep) < 7) {
-        recs.push(`Your sleep duration of ${cleanSleep} is below optimal recovery targets. Prioritize winding down 30 minutes earlier.`);
-      } else if (cleanSleep && parseFloat(cleanSleep) >= 8) {
-        recs.push(`Strong ${cleanSleep} sleep recorded—central nervous system recovery is primed for deep focus.`);
-      }
-      if (cleanHr && parseInt(cleanHr, 10) > 85) {
-        recs.push(`Resting heart rate (${cleanHr}) is slightly elevated. Consider 5 minutes of box-breathing.`);
-      }
-      if (recs.length === 0) {
-        recs.push('Consistent biometric signals detected. Maintain steady hydration and regular active intervals.');
-      }
-      return recs.join(' ');
-    };
-
-    const result = await callOllama(systemPrompt, userContext, fallback);
-
-    if (req.user && req.user._id) {
-      try {
-        await AIHistory.create({
-          userId: req.user._id,
-          text: result.text,
-          category: 'Health',
-        });
-      } catch (e) {}
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Authentication required for personalized AI recommendations',
+      });
     }
+
+    const { prompt } = req.body || {};
+
+    // 1. Retrieve user's actual health data from MongoDB
+    const [healthRecords, medications, goals] = await Promise.all([
+      HealthRecord.find({ userId: req.user._id }).sort({ createdAt: -1 }).limit(10),
+      Medication.find({ userId: req.user._id, status: 'Active' }),
+      Goal.find({ userId: req.user._id, category: { $in: ['Health', 'Health & Vitality', 'Fitness'] } }),
+    ]);
+
+    // 2. Generate personalized recommendation via AI service
+    const result = await aiService.generateHealthRecommendation({
+      user: req.user,
+      healthRecords,
+      medications,
+      goals,
+      customPrompt: prompt,
+    });
+
+    // 3. Save recommendation to user's AI history in MongoDB
+    let savedHistoryItem = null;
+    try {
+      savedHistoryItem = await AIHistory.create({
+        userId: req.user._id,
+        text: result.text,
+        category: 'Health',
+        source: result.source,
+      });
+    } catch (err) {
+      console.error('Error persisting AI recommendation:', err.message);
+    }
+
+    // 4. Retrieve recent health history for user
+    const history = await AIHistory.find({ userId: req.user._id, category: 'Health' })
+      .sort({ createdAt: -1 })
+      .limit(10);
 
     return res.status(200).json({
       success: true,
@@ -109,34 +61,84 @@ ${prompt ? `Additional context: ${prompt}` : ''}`;
       model: result.model,
       source: result.source,
       timestamp: new Date().toISOString(),
+      history: history.map((h) => ({
+        id: h._id,
+        text: h.text,
+        category: h.category,
+        date: h.createdAt ? h.createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Today',
+      })),
     });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message });
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to generate AI health recommendation',
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get AI Recommendation History
+ * @route GET /api/ai/health-recommendations or GET /api/ai/history
+ * @access Private
+ */
+exports.getAiHistory = async (req, res) => {
+  try {
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ success: false, message: 'Authentication required' });
+    }
+
+    const { category, limit = 20 } = req.query;
+    const query = { userId: req.user._id };
+
+    if (category) {
+      query.category = category;
+    }
+
+    const history = await AIHistory.find(query)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit, 10));
+
+    return res.status(200).json({
+      success: true,
+      count: history.length,
+      history: history.map((item) => ({
+        id: item._id,
+        text: item.text,
+        category: item.category,
+        source: item.source,
+        date: item.createdAt ? item.createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'Today',
+        createdAt: item.createdAt,
+      })),
+    });
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch AI history',
+      error: error.message,
+    });
   }
 };
 
 /**
  * 2. Goal Strategy & Execution AI Review
+ * @route POST /api/ai/goal-recommendation
  */
 exports.getGoalRecommendation = async (req, res) => {
   try {
-    const { totalGoals, completedGoals, activeGoals, categories, currentProgress } = req.body || {};
+    let goals = [];
+    if (req.user && req.user._id) {
+      goals = await Goal.find({ userId: req.user._id });
+    }
 
-    const systemPrompt = `You are HumanOS Goal Strategist AI.
-Analyze the user's quarterly/yearly goal progression and give a concise, high-impact 2-sentence executive review and actionable next milestone.`;
+    const currentProgress = goals.length > 0
+      ? Math.round(goals.reduce((acc, g) => acc + (g.progress || 0), 0) / goals.length)
+      : (req.body?.currentProgress || 0);
 
-    const userContext = `User Goal Metrics:
-- Overall Progress: ${currentProgress || 0}%
-- Total Goals: ${totalGoals || 0}
-- Completed Goals: ${completedGoals || 0}
-- Active Goals: ${Array.isArray(activeGoals) ? activeGoals.map((g) => `${g.title} (${g.progress}%)`).join('; ') : 'None'}
-- Top Focus Categories: ${Array.isArray(categories) ? categories.join(', ') : 'All'}`;
-
-    const fallback = () => {
-      return `You are maintaining solid momentum at ${currentProgress || 0}% overall completion. Focus your highest energy block on advancing your highest-leverage active milestones this week.`;
-    };
-
-    const result = await callOllama(systemPrompt, userContext, fallback);
+    const result = await aiService.generateGoalRecommendation({
+      goals,
+      currentProgress,
+    });
 
     if (req.user && req.user._id) {
       try {
@@ -144,6 +146,7 @@ Analyze the user's quarterly/yearly goal progression and give a concise, high-im
           userId: req.user._id,
           text: result.text,
           category: 'Goals',
+          source: result.source,
         });
       } catch (e) {}
     }
@@ -162,24 +165,16 @@ Analyze the user's quarterly/yearly goal progression and give a concise, high-im
 
 /**
  * 3. Daily Task Prioritization & Schedule AI
+ * @route POST /api/ai/task-recommendation
  */
 exports.getTaskRecommendation = async (req, res) => {
   try {
-    const { totalTasks, completedTasks, pendingTasks, highPriorityTasks } = req.body || {};
+    let tasks = [];
+    if (req.user && req.user._id) {
+      tasks = await Task.find({ userId: req.user._id });
+    }
 
-    const systemPrompt = `You are HumanOS Productivity AI.
-Review the user's task queue and produce a motivating, 2-sentence daily priority briefing.`;
-
-    const userContext = `Daily Task State:
-- Completed: ${completedTasks || 0} / ${totalTasks || 0}
-- Pending Tasks: ${Array.isArray(pendingTasks) ? pendingTasks.slice(0, 5).join(', ') : 'None'}
-- High Priority Items: ${Array.isArray(highPriorityTasks) ? highPriorityTasks.join(', ') : 'None'}`;
-
-    const fallback = () => {
-      return `Prioritize completing your top high-impact intention during your peak cognitive window before noon. Group remaining operational tasks into a single afternoon batch.`;
-    };
-
-    const result = await callOllama(systemPrompt, userContext, fallback);
+    const result = await aiService.generateTaskRecommendation({ tasks });
 
     return res.status(200).json({
       success: true,
@@ -194,25 +189,17 @@ Review the user's task queue and produce a motivating, 2-sentence daily priority
 
 /**
  * 4. Finance & Wealth Advisory AI
+ * @route POST /api/ai/finance-recommendation
  */
 exports.getFinanceRecommendation = async (req, res) => {
   try {
-    const { totalBalance, monthlyIncome, monthlyExpenses, currency, recentTransactions } = req.body || {};
-
-    const systemPrompt = `You are HumanOS Wealth & Financial Intelligence AI.
-Analyze user cashflow metrics and return a concise, 2-sentence wealth optimization insight.`;
-
-    const userContext = `Financial Snapshot:
-- Net Balance: ${currency || '$'}${totalBalance || '0'}
-- Monthly Inflow: ${currency || '$'}${monthlyIncome || '0'}
-- Monthly Outflow: ${currency || '$'}${monthlyExpenses || '0'}
-- Recent Activity: ${Array.isArray(recentTransactions) ? recentTransactions.slice(0, 3).map((t) => `${t.title}: ${currency || '$'}${t.amount}`).join('; ') : 'Normal'}`;
-
-    const fallback = () => {
-      return `Your net cashflow ratio remains well-balanced this month. Consider allocating surplus reserves into automated savings and high-yield investments.`;
-    };
-
-    const result = await callOllama(systemPrompt, userContext, fallback);
+    const { totalBalance, monthlyIncome, monthlyExpenses, currency } = req.body || {};
+    const result = await aiService.generateFinanceRecommendation({
+      totalBalance,
+      monthlyIncome,
+      monthlyExpenses,
+      currency,
+    });
 
     return res.status(200).json({
       success: true,
@@ -227,25 +214,16 @@ Analyze user cashflow metrics and return a concise, 2-sentence wealth optimizati
 
 /**
  * 5. Smart Note Assistant & Summarizer
+ * @route POST /api/ai/note-assistant
  */
 exports.getNoteAssistant = async (req, res) => {
   try {
-    const { noteTitle, noteContent, action = 'summarize' } = req.body || {};
-
-    const systemPrompt = `You are HumanOS Note Intelligence AI.
-You help summarize notes and extract concrete action items.
-Action requested: ${action}.
-Provide a clear, formatted, high-value result in 2 to 3 concise bullet points or sentences.`;
-
-    const userContext = `Note Title: ${noteTitle || 'Untitled'}
-Note Content:
-${noteContent || ''}`;
-
-    const fallback = () => {
-      return `Key takeaway: Main concepts identified and organized into structured action points.`;
-    };
-
-    const result = await callOllama(systemPrompt, userContext, fallback);
+    const { noteTitle, noteContent, action } = req.body || {};
+    const result = await aiService.generateNoteAssistant({
+      noteTitle,
+      noteContent,
+      action,
+    });
 
     return res.status(200).json({
       success: true,
@@ -260,23 +238,16 @@ ${noteContent || ''}`;
 
 /**
  * 6. Universal / General AI Assistant
+ * @route POST /api/ai/assistant
  */
 exports.getGeneralAssistant = async (req, res) => {
   try {
-    const { prompt, context, module = 'General' } = req.body || {};
-
-    const systemPrompt = `You are HumanOS Assistant, an elite executive operating system AI.
-Provide concise, elegant, and actionable assistance tailored to the user's prompt.`;
-
-    const userContext = `Module: ${module}
-Context: ${JSON.stringify(context || {})}
-User Request: ${prompt}`;
-
-    const fallback = () => {
-      return `Your personal assistant is active. Focus on executing today's core priorities with calm consistency.`;
-    };
-
-    const result = await callOllama(systemPrompt, userContext, fallback);
+    const { prompt, context, module } = req.body || {};
+    const result = await aiService.generateGeneralAssistant({
+      prompt,
+      context,
+      module,
+    });
 
     return res.status(200).json({
       success: true,
@@ -286,36 +257,5 @@ User Request: ${prompt}`;
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
-  }
-};
-
-/**
- * GET /api/ai/history
- */
-exports.getAiHistory = async (req, res) => {
-  try {
-    if (!req.user || !req.user._id) {
-      return res.status(401).json({ success: false, message: 'Authentication required' });
-    }
-
-    const history = await AIHistory.find({ userId: req.user._id })
-      .sort({ createdAt: -1 })
-      .limit(20);
-
-    return res.status(200).json({
-      success: true,
-      history: history.map((item) => ({
-        id: item._id,
-        text: item.text,
-        category: item.category,
-        date: item.createdAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-      })),
-    });
-  } catch (error) {
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to fetch AI history',
-      error: error.message,
-    });
   }
 };

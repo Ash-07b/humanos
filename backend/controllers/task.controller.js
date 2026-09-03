@@ -43,6 +43,11 @@ exports.createTask = async (req, res) => {
       completedAt,
     });
 
+    if (task.reminder) {
+      const notificationService = require('../services/notificationService');
+      await notificationService.triggerTaskReminder(req.user._id, task);
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Task created successfully',

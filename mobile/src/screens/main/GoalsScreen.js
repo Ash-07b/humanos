@@ -36,7 +36,17 @@ import {
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
-import { fetchAiGoalRecommendation } from '../../services/api';
+import {
+  fetchAiGoalRecommendation,
+  fetchGoals,
+  createGoal,
+  updateGoal,
+  updateGoalProgress,
+  completeGoal,
+  addGoalMilestone,
+  toggleGoalMilestone,
+  deleteGoal,
+} from '../../services/api';
 import { getToken } from '../../services/storage';
 
 export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation }) {
@@ -50,6 +60,7 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
   // Modals state
@@ -83,14 +94,38 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
   );
   const [aiReviewLoading, setAiReviewLoading] = useState(false);
 
+  // Fetch goals from backend API
+  const loadGoalsFromApi = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetchGoals({}, token);
+      if (res && res.success) {
+        if (Array.isArray(res.goals)) {
+          setGoals(res.goals);
+        }
+        if (Array.isArray(res.completedGoals)) {
+          setCompletedGoals(res.completedGoals);
+        }
+      }
+    } catch (err) {
+      console.log('Error fetching goals from API:', err);
+    }
+  };
+
+  // Load goals on mount
+  React.useEffect(() => {
+    loadGoalsFromApi();
+  }, []);
+
   // Sync state whenever user data changes from database
   React.useEffect(() => {
     if (user) {
-      if (user.goals) {
-        setGoals(user.goals || []);
+      if (user.goals && user.goals.length > 0 && goals.length === 0) {
+        setGoals(user.goals);
       }
-      if (user.completedGoals) {
-        setCompletedGoals(user.completedGoals || []);
+      if (user.completedGoals && user.completedGoals.length > 0 && completedGoals.length === 0) {
+        setCompletedGoals(user.completedGoals);
       }
     }
   }, [user]);
@@ -106,12 +141,16 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
     }, 2800);
   };
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await loadGoalsFromApi();
       showToast('Goals synchronized');
-    }, 600);
+    } catch (e) {
+      console.log('Error refreshing goals:', e);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleGenerateAiReview = async () => {
@@ -174,7 +213,7 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
       : 0);
 
   const totalProgressSum =
-    goals.reduce((acc, g) => acc + g.progress, 0) + completedGoals.length * 100;
+    goals.reduce((acc, g) => acc + (g.progress || 0), 0) + completedGoals.length * 100;
   const overallProgress = totalGoalsCount > 0 ? Math.round(totalProgressSum / totalGoalsCount) : 0;
 
   // Filtered Goals
@@ -190,67 +229,107 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
   });
 
   // Add Goal Handler
-  const handleCreateGoal = () => {
+  const handleCreateGoal = async () => {
     if (!newGoalTitle.trim()) {
       setFormError('Please enter a goal title.');
       return;
     }
 
-    const created = {
-      id: `g_${Date.now()}`,
+    const payload = {
       title: newGoalTitle.trim(),
       description: newGoalDesc.trim() || 'No description provided.',
       category: newGoalCategory,
       progress: 0,
-      targetDate: newGoalTargetDate.trim() || 'Ongoing',
+      targetDate: newGoalTargetDate.trim() || 'Dec 31',
       priority: newGoalPriority,
       status: 'Active',
-      createdDate: 'Today',
-      progressHistory: [{ date: 'Today', progress: 0, note: 'Goal initialized' }],
       milestones: [
-        { id: `m_${Date.now()}_1`, text: 'Initial scoping & plan', completed: false },
-        { id: `m_${Date.now()}_2`, text: 'Execution phase 1', completed: false },
+        { text: 'Initial scoping & plan', completed: false },
+        { text: 'Execution phase 1', completed: false },
       ],
     };
 
-    setGoals((prev) => [created, ...prev]);
+    try {
+      const token = await getToken();
+      if (token) {
+        const res = await createGoal(payload, token);
+        if (res && res.success && res.goal) {
+          setGoals((prev) => [res.goal, ...prev]);
+          showToast(`Created "${res.goal.title}"`);
+        } else {
+          // Fallback local creation
+          const fallback = {
+            id: `g_${Date.now()}`,
+            ...payload,
+            createdDate: 'Today',
+            progressHistory: [{ date: 'Today', progress: 0, note: 'Goal initialized' }],
+          };
+          setGoals((prev) => [fallback, ...prev]);
+          showToast(`Created "${fallback.title}"`);
+        }
+      } else {
+        const fallback = {
+          id: `g_${Date.now()}`,
+          ...payload,
+          createdDate: 'Today',
+          progressHistory: [{ date: 'Today', progress: 0, note: 'Goal initialized' }],
+        };
+        setGoals((prev) => [fallback, ...prev]);
+        showToast(`Created "${fallback.title}"`);
+      }
+    } catch (e) {
+      console.log('Error creating goal:', e);
+      showToast('Failed to create goal on server');
+    }
+
     setNewGoalTitle('');
     setNewGoalDesc('');
     setFormError('');
     setAddModalVisible(false);
-    showToast(`Created "${created.title}"`);
   };
 
   // Update Goal Progress Handler
-  const handleUpdateProgress = (goalId, newProgress) => {
+  const handleUpdateProgress = async (goalId, newProgress) => {
     const numericProgress = Math.min(100, Math.max(0, parseInt(newProgress, 10) || 0));
 
+    // Optimistic UI updates
     if (numericProgress >= 100) {
-      const target = goals.find((g) => g.id === goalId);
+      const target = goals.find((g) => (g.id === goalId || g._id === goalId));
       if (target) {
-        setGoals((prev) => prev.filter((g) => g.id !== goalId));
+        setGoals((prev) => prev.filter((g) => (g.id !== goalId && g._id !== goalId)));
         setCompletedGoals((prev) => [
           {
-            id: target.id,
+            ...target,
+            id: target.id || target._id,
             title: target.title,
             category: target.category,
             completedDate: 'Today',
             progress: 100,
+            status: 'Completed',
           },
           ...prev,
         ]);
-        if (selectedGoal && selectedGoal.id === goalId) {
+        if (selectedGoal && (selectedGoal.id === goalId || selectedGoal._id === goalId)) {
           setDetailsModalVisible(false);
         }
         setEditProgressModalVisible(false);
         showToast(`🎉 Goal "${target.title}" Completed!`);
+
+        try {
+          const token = await getToken();
+          if (token) {
+            await updateGoalProgress(goalId, 100, 'Goal completed', token);
+          }
+        } catch (e) {
+          console.log('Error updating goal progress on server:', e);
+        }
         return;
       }
     }
 
     setGoals((prev) =>
       prev.map((g) => {
-        if (g.id === goalId) {
+        if (g.id === goalId || g._id === goalId) {
           const updatedHistory = [
             { date: 'Today', progress: numericProgress, note: `Updated to ${numericProgress}%` },
             ...(g.progressHistory || []),
@@ -265,7 +344,7 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
       })
     );
 
-    if (selectedGoal && selectedGoal.id === goalId) {
+    if (selectedGoal && (selectedGoal.id === goalId || selectedGoal._id === goalId)) {
       setSelectedGoal((prev) => ({
         ...prev,
         progress: numericProgress,
@@ -278,15 +357,24 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
 
     setEditProgressModalVisible(false);
     showToast(`Progress updated to ${numericProgress}%`);
+
+    try {
+      const token = await getToken();
+      if (token) {
+        await updateGoalProgress(goalId, numericProgress, `Updated to ${numericProgress}%`, token);
+      }
+    } catch (e) {
+      console.log('Error updating goal progress:', e);
+    }
   };
 
   // Toggle Milestone
-  const handleToggleMilestone = (goalId, milestoneId) => {
+  const handleToggleMilestone = async (goalId, milestoneId) => {
     setGoals((prev) =>
       prev.map((g) => {
-        if (g.id === goalId) {
+        if (g.id === goalId || g._id === goalId) {
           const updatedMilestones = (g.milestones || []).map((m) =>
-            m.id === milestoneId ? { ...m, completed: !m.completed } : m
+            (m.id === milestoneId || m._id === milestoneId) ? { ...m, completed: !m.completed } : m
           );
           return { ...g, milestones: updatedMilestones };
         }
@@ -294,28 +382,38 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
       })
     );
 
-    if (selectedGoal && selectedGoal.id === goalId) {
+    if (selectedGoal && (selectedGoal.id === goalId || selectedGoal._id === goalId)) {
       setSelectedGoal((prev) => ({
         ...prev,
         milestones: (prev.milestones || []).map((m) =>
-          m.id === milestoneId ? { ...m, completed: !m.completed } : m
+          (m.id === milestoneId || m._id === milestoneId) ? { ...m, completed: !m.completed } : m
         ),
       }));
+    }
+
+    try {
+      const token = await getToken();
+      if (token) {
+        await toggleGoalMilestone(goalId, milestoneId, token);
+      }
+    } catch (e) {
+      console.log('Error toggling milestone on server:', e);
     }
   };
 
   // Add Milestone to Goal
-  const handleAddMilestone = () => {
+  const handleAddMilestone = async () => {
     if (!newMilestoneText.trim() || !selectedGoal) return;
+    const textToAdd = newMilestoneText.trim();
     const newM = {
       id: `m_${Date.now()}`,
-      text: newMilestoneText.trim(),
+      text: textToAdd,
       completed: false,
     };
 
     setGoals((prev) =>
       prev.map((g) => {
-        if (g.id === selectedGoal.id) {
+        if (g.id === selectedGoal.id || g._id === selectedGoal._id) {
           return { ...g, milestones: [...(g.milestones || []), newM] };
         }
         return g;
@@ -330,18 +428,47 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
     setNewMilestoneText('');
     setAddMilestoneModalVisible(false);
     showToast('Milestone added');
+
+    try {
+      const token = await getToken();
+      if (token) {
+        const res = await addGoalMilestone(selectedGoal.id || selectedGoal._id, textToAdd, token);
+        if (res && res.success && res.goal) {
+          setGoals((prev) =>
+            prev.map((g) => ((g.id === res.goal.id || g._id === res.goal._id) ? res.goal : g))
+          );
+          setSelectedGoal(res.goal);
+        }
+      }
+    } catch (e) {
+      console.log('Error adding milestone on server:', e);
+    }
   };
 
   // Delete Goal
-  const handleDeleteGoal = () => {
+  const handleDeleteGoal = async () => {
     if (!goalToDelete) return;
-    setGoals((prev) => prev.filter((g) => g.id !== goalToDelete.id));
-    if (selectedGoal && selectedGoal.id === goalToDelete.id) {
+    const idToDelete = goalToDelete.id || goalToDelete._id;
+
+    setGoals((prev) => prev.filter((g) => (g.id !== idToDelete && g._id !== idToDelete)));
+    setCompletedGoals((prev) => prev.filter((g) => (g.id !== idToDelete && g._id !== idToDelete)));
+
+    if (selectedGoal && (selectedGoal.id === idToDelete || selectedGoal._id === idToDelete)) {
       setDetailsModalVisible(false);
     }
     setDeleteModalVisible(false);
+    const deletedTitle = goalToDelete.title;
     setGoalToDelete(null);
-    showToast('Goal deleted');
+    showToast(`Deleted "${deletedTitle}"`);
+
+    try {
+      const token = await getToken();
+      if (token) {
+        await deleteGoal(idToDelete, token);
+      }
+    } catch (e) {
+      console.log('Error deleting goal on server:', e);
+    }
   };
 
   const getPriorityColor = (priority) => {
@@ -1302,9 +1429,21 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
             </Pressable>
 
             <Pressable
-              onPress={() => {
+              onPress={async () => {
                 setOptionsModalVisible(false);
-                showToast(`Archived "${targetOptionGoal?.title}"`);
+                if (targetOptionGoal) {
+                  const targetId = targetOptionGoal.id || targetOptionGoal._id;
+                  setGoals((prev) => prev.filter((g) => (g.id !== targetId && g._id !== targetId)));
+                  showToast(`Archived "${targetOptionGoal?.title}"`);
+                  try {
+                    const token = await getToken();
+                    if (token) {
+                      await updateGoal(targetId, { status: 'Archived' }, token);
+                    }
+                  } catch (e) {
+                    console.log('Error archiving goal on server:', e);
+                  }
+                }
               }}
               style={styles.optionMenuItem}
             >

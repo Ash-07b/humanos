@@ -25,9 +25,17 @@ import {
   Sparkles,
   MapPin,
   Clock,
+  Trash2,
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
+import {
+  fetchCalendarEvents,
+  createCalendarEvent,
+  updateCalendarEvent,
+  deleteCalendarEvent,
+} from '../../services/api';
+import { getToken } from '../../services/storage';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -58,11 +66,14 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
   const [selectedDate, setSelectedDate] = useState(today);
   const [viewMode, setViewMode] = useState('month'); // 'month' | 'agenda'
 
-  // Modal & Notice
+  // Modal & Notice & Delete State
   const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [editingEvent, setEditingEvent] = useState(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [eventToDelete, setEventToDelete] = useState(null);
   const [noticeMessage, setNoticeMessage] = useState('');
 
-  // Form State for creating events
+  // Form State for creating/editing events
   const [eventTitle, setEventTitle] = useState('');
   const [eventDateStr, setEventDateStr] = useState(todayYMD);
   const [eventStartTime, setEventStartTime] = useState('10:00 AM');
@@ -74,9 +85,28 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
   // Events State (dynamically bound to database user)
   const [events, setEvents] = useState(user?.events || []);
 
+  // Fetch calendar events from backend API
+  const loadEventsFromApi = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetchCalendarEvents({}, token);
+      if (res && res.success && Array.isArray(res.events)) {
+        setEvents(res.events);
+      }
+    } catch (e) {
+      console.log('Error fetching events from API:', e);
+    }
+  };
+
+  // Load events on mount
+  React.useEffect(() => {
+    loadEventsFromApi();
+  }, []);
+
   // Sync state whenever user data changes from database
   React.useEffect(() => {
-    if (user && user.events) {
+    if (user && user.events && events.length === 0) {
       setEvents(user.events || []);
     }
   }, [user]);
@@ -86,12 +116,16 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
     setTimeout(() => setNoticeMessage(''), 2600);
   };
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await loadEventsFromApi();
       showNotice('Calendar synced with all devices');
-    }, 600);
+    } catch (e) {
+      console.log('Error refreshing calendar events:', e);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleTabChange = (tabId) => {
@@ -100,6 +134,8 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
     else if (navigation) {
       if (tabId === 'dashboard') navigation.navigate('Dashboard');
       else if (tabId === 'tasks') navigation.navigate('Tasks');
+      else if (tabId === 'goals') navigation.navigate('Goals');
+      else if (tabId === 'health') navigation.navigate('Health');
       else if (tabId === 'finance') navigation.navigate('Finance');
       else if (tabId === 'notes') navigation.navigate('Notes');
       else if (tabId === 'profile') navigation.navigate('Profile');
@@ -122,17 +158,53 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
     setEventDateStr(formatYMD(n));
   };
 
-  // Create Event
-  const openCreateModal = (presetDate) => {
-    const targetDate = presetDate || selectedDate;
-    setEventDateStr(formatYMD(targetDate));
-    setEventTitle('');
-    setEventStartTime('10:00 AM');
-    setEventEndTime('11:30 AM');
+  const getColorForTag = (tag) => {
+    switch (tag) {
+      case 'Health':
+        return '#059669';
+      case 'Finance':
+        return '#D97706';
+      case 'Meeting':
+        return '#0284C7';
+      case 'Strategy':
+        return '#8B5CF6';
+      case 'Milestone':
+        return '#EC4899';
+      case 'Personal':
+        return '#10B981';
+      case 'Deep Work':
+      default:
+        return '#4F46E5';
+    }
+  };
+
+  // Open Create / Edit Modal
+  const openCreateModal = (presetDate = null, eventToEdit = null) => {
+    if (eventToEdit) {
+      setEditingEvent(eventToEdit);
+      setEventTitle(eventToEdit.title || '');
+      setEventDateStr(eventToEdit.dateString || todayYMD);
+      setEventStartTime(eventToEdit.startTime || '10:00 AM');
+      setEventEndTime(eventToEdit.endTime || '11:30 AM');
+      setEventTag(eventToEdit.tag || 'Deep Work');
+      setEventReminder(eventToEdit.reminder !== undefined ? Boolean(eventToEdit.reminder) : true);
+      setEventLocation(eventToEdit.location || '');
+    } else {
+      setEditingEvent(null);
+      const targetDate = presetDate || selectedDate;
+      setEventDateStr(formatYMD(targetDate));
+      setEventTitle('');
+      setEventStartTime('10:00 AM');
+      setEventEndTime('11:30 AM');
+      setEventTag('Deep Work');
+      setEventReminder(true);
+      setEventLocation('');
+    }
     setCreateModalVisible(true);
   };
 
-  const handleSaveEvent = () => {
+  // Save or Update Event
+  const handleSaveEvent = async () => {
     if (!eventTitle.trim()) {
       showNotice('Please enter an event title');
       return;
@@ -142,20 +214,84 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
       return;
     }
 
-    const newEv = {
-      id: Date.now().toString(),
-      dateString: eventDateStr.trim(),
+    const payload = {
       title: eventTitle.trim(),
-      time: `${eventStartTime} - ${eventEndTime}`,
+      dateString: eventDateStr.trim(),
+      startTime: eventStartTime.trim() || '10:00 AM',
+      endTime: eventEndTime.trim() || '11:30 AM',
+      time: `${eventStartTime.trim() || '10:00 AM'} - ${eventEndTime.trim() || '11:30 AM'}`,
       tag: eventTag,
-      color: eventTag === 'Health' ? '#059669' : eventTag === 'Finance' ? '#D97706' : '#4F46E5',
+      color: getColorForTag(eventTag),
       reminder: eventReminder,
       location: eventLocation.trim() || 'Scheduled Block',
     };
 
-    setEvents((prev) => [...prev, newEv]);
+    try {
+      const token = await getToken();
+      if (editingEvent) {
+        const idToUpdate = editingEvent.id || editingEvent._id;
+        setEvents((prev) =>
+          prev.map((e) => ((e.id === idToUpdate || e._id === idToUpdate) ? { ...e, ...payload } : e))
+        );
+        showNotice('Event updated for ' + eventDateStr);
+
+        if (token) {
+          const res = await updateCalendarEvent(idToUpdate, payload, token);
+          if (res && res.success && res.event) {
+            setEvents((prev) =>
+              prev.map((e) => ((e.id === idToUpdate || e._id === idToUpdate) ? res.event : e))
+            );
+          }
+        }
+      } else {
+        const tempEv = {
+          id: Date.now().toString(),
+          ...payload,
+        };
+        setEvents((prev) => [...prev, tempEv]);
+        showNotice('Event scheduled for ' + eventDateStr);
+
+        if (token) {
+          const res = await createCalendarEvent(payload, token);
+          if (res && res.success && res.event) {
+            setEvents((prev) =>
+              prev.map((e) => (e.id === tempEv.id ? res.event : e))
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Error saving event:', e);
+      showNotice('Saved event locally');
+    }
+
     setCreateModalVisible(false);
-    showNotice('Event scheduled for ' + eventDateStr);
+    setEditingEvent(null);
+  };
+
+  // Delete event confirmation
+  const confirmDeleteEvent = (ev) => {
+    setEventToDelete(ev);
+    setDeleteModalVisible(true);
+  };
+
+  const executeDeleteEvent = async () => {
+    if (!eventToDelete) return;
+    const targetId = eventToDelete.id || eventToDelete._id;
+
+    setEvents((prev) => prev.filter((e) => (e.id !== targetId && e._id !== targetId)));
+    showNotice('Event removed from schedule');
+    setDeleteModalVisible(false);
+    setEventToDelete(null);
+
+    try {
+      const token = await getToken();
+      if (token) {
+        await deleteCalendarEvent(targetId, token);
+      }
+    } catch (e) {
+      console.log('Error deleting event on server:', e);
+    }
   };
 
   // Build Calendar Matrix for current displayed month
@@ -464,14 +600,35 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                 ) : (
                   <View style={styles.eventsList}>
                     {selectedDayEvents.map((ev) => (
-                      <View key={ev.id} style={[styles.eventCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                      <Pressable
+                        key={ev.id || ev._id}
+                        onPress={() => openCreateModal(null, ev)}
+                        style={({ pressed }) => [
+                          styles.eventCard,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
+                        ]}
+                      >
                         <View style={[styles.eventStripe, { backgroundColor: ev.color }]} />
                         <View style={styles.eventBody}>
                           <View style={styles.eventTopRow}>
                             <View style={styles.eventTagBadge}>
                               <Text style={styles.eventTagText}>{ev.tag}</Text>
                             </View>
-                            <Text style={[styles.eventTimeText, { color: theme.colors.textMuted }]}>{ev.time}</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <Text style={[styles.eventTimeText, { color: theme.colors.textMuted }]}>{ev.time}</Text>
+                              <Pressable
+                                onPress={(e) => {
+                                  e?.stopPropagation?.();
+                                  confirmDeleteEvent(ev);
+                                }}
+                                hitSlop={8}
+                                style={{ padding: 2 }}
+                              >
+                                <X size={14} color="#94A3B8" strokeWidth={2.2} />
+                              </Pressable>
+                            </View>
                           </View>
                           <Text style={[styles.eventTitle, { color: theme.colors.textPrimary }]}>{ev.title}</Text>
                           {!!ev.location && (
@@ -481,7 +638,7 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                             </View>
                           )}
                         </View>
-                      </View>
+                      </Pressable>
                     ))}
                   </View>
                 )}
@@ -499,9 +656,18 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
 
               <View style={styles.eventsList}>
                 {futureEvents.map((ev) => {
-                  const evDate = new Date(ev.dateString + 'T00:00:00');
+                  const evDate = new Date((ev.dateString || todayYMD) + 'T00:00:00');
                   return (
-                    <View key={ev.id} style={[styles.futureEventCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                    <Pressable
+                      key={ev.id || ev._id}
+                      onPress={() => openCreateModal(null, ev)}
+                      style={({ pressed }) => [
+                        styles.futureEventCard,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
                       <View style={[styles.futureDateBadge, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF', borderColor: theme.colors.border }]}>
                         <Text style={[styles.futureMonthText, { color: isDarkMode ? '#C7D2FE' : '#4F46E5' }]}>
                           {evDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}
@@ -515,7 +681,19 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                           <View style={styles.eventTagBadge}>
                             <Text style={styles.eventTagText}>{ev.tag}</Text>
                           </View>
-                          <Text style={[styles.eventTimeText, { color: theme.colors.textMuted }]}>{ev.time}</Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                            <Text style={[styles.eventTimeText, { color: theme.colors.textMuted }]}>{ev.time}</Text>
+                            <Pressable
+                              onPress={(e) => {
+                                e?.stopPropagation?.();
+                                confirmDeleteEvent(ev);
+                              }}
+                              hitSlop={8}
+                              style={{ padding: 2 }}
+                            >
+                              <X size={14} color="#94A3B8" strokeWidth={2.2} />
+                            </Pressable>
+                          </View>
                         </View>
                         <Text style={[styles.eventTitle, { color: theme.colors.textPrimary }]}>{ev.title}</Text>
                         {!!ev.location && (
@@ -525,7 +703,7 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                           </View>
                         )}
                       </View>
-                    </View>
+                    </Pressable>
                   );
                 })}
               </View>
@@ -536,22 +714,32 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
         </View>
       </ScrollView>
 
-      {/* ==================== 3. CREATE EVENT MODAL ==================== */}
+      {/* ==================== 3. CREATE / EDIT EVENT MODAL ==================== */}
       <Modal
         visible={createModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setCreateModalVisible(false)}
+        onRequestClose={() => {
+          setCreateModalVisible(false);
+          setEditingEvent(null);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.modalHeader}>
               <View>
-                <Text style={styles.modalKicker}>SCHEDULE EVENT</Text>
-                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Add Future Event</Text>
+                <Text style={styles.modalKicker}>
+                  {editingEvent ? 'UPDATE EVENT' : 'SCHEDULE EVENT'}
+                </Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+                  {editingEvent ? 'Edit Event' : 'Add Future Event'}
+                </Text>
               </View>
               <Pressable
-                onPress={() => setCreateModalVisible(false)}
+                onPress={() => {
+                  setCreateModalVisible(false);
+                  setEditingEvent(null);
+                }}
                 style={styles.modalCloseBtn}
               >
                 <X size={18} color="#94A3B8" strokeWidth={2.2} />
@@ -699,7 +887,10 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
 
             <View style={styles.modalActionsRow}>
               <Pressable
-                onPress={() => setCreateModalVisible(false)}
+                onPress={() => {
+                  setCreateModalVisible(false);
+                  setEditingEvent(null);
+                }}
                 style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
               >
                 <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
@@ -709,7 +900,47 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                 onPress={handleSaveEvent}
                 style={styles.modalSubmitBtn}
               >
-                <Text style={styles.modalSubmitText}>Save to Calendar</Text>
+                <Text style={styles.modalSubmitText}>
+                  {editingEvent ? 'Update Event' : 'Save to Calendar'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ==================== 4. DELETE EVENT CONFIRMATION MODAL ==================== */}
+      <Modal
+        visible={deleteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, maxWidth: 360 }]}>
+            <View style={{ alignItems: 'center', marginVertical: 12 }}>
+              <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                <Trash2 size={24} color="#EF4444" strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary, textAlign: 'center' }]}>Delete Event?</Text>
+              <Text style={{ color: theme.colors.textSecondary, fontSize: 13, textAlign: 'center', marginTop: 6, lineHeight: 18 }}>
+                Are you sure you want to remove "{eventToDelete?.title}" from your schedule?
+              </Text>
+            </View>
+
+            <View style={styles.modalActionsRow}>
+              <Pressable
+                onPress={() => setDeleteModalVisible(false)}
+                style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
+              >
+                <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={executeDeleteEvent}
+                style={[styles.modalSubmitBtn, { backgroundColor: '#EF4444' }]}
+              >
+                <Text style={styles.modalSubmitText}>Delete</Text>
               </Pressable>
             </View>
           </View>

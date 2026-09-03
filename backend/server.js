@@ -18,7 +18,7 @@ app.use(express.urlencoded({ limit: '15mb', extended: true }));
 // CORS middleware
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
@@ -29,7 +29,15 @@ app.use((req, res, next) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/tasks', require('./routes/task.routes'));
+app.use('/api/goals', require('./routes/goal.routes'));
+app.use('/api/health', require('./routes/health.routes'));
+app.use('/api/medications', require('./routes/medication.routes'));
+app.use('/api/calendar', require('./routes/calendar.routes'));
+app.use('/api/finance', require('./routes/finance.routes'));
+app.use('/api/notes', require('./routes/note.routes'));
+app.use('/api/notifications', require('./routes/notification.routes'));
 app.use('/api/ai', require('./routes/ai.routes'));
+app.use('/api/admin', require('./routes/adminRoutes'));
 
 // Root test route
 app.get('/', (req, res) => {

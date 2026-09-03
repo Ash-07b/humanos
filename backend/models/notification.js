@@ -20,16 +20,49 @@ const notificationSchema = new mongoose.Schema(
     },
     type: {
       type: String,
+      enum: [
+        'TASK_REMINDER',
+        'CALENDAR_REMINDER',
+        'MEDICATION_REMINDER',
+        'GOAL_REMINDER',
+        'SYSTEM_REMINDER',
+        'INFO',
+        'WARNING',
+        'ALERT',
+      ],
       default: 'INFO',
     },
     read: {
       type: Boolean,
       default: false,
     },
+    relatedEntityId: {
+      type: mongoose.Schema.Types.ObjectId,
+      default: null,
+    },
+    scheduledTime: {
+      type: Date,
+      default: null,
+    },
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        return ret;
+      },
+    },
   }
 );
 
 module.exports = mongoose.models.Notification || mongoose.model('Notification', notificationSchema);
+

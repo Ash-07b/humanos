@@ -17,10 +17,10 @@ const transactionSchema = new mongoose.Schema(
       type: String,
       required: [true, 'Transaction type is required'],
       enum: {
-        values: ['INCOME', 'EXPENSE'],
-        message: '{VALUE} is not a valid transaction type. Allowed values are INCOME, EXPENSE',
+        values: ['Income', 'Expense', 'INCOME', 'EXPENSE'],
+        message: '{VALUE} is not a valid transaction type. Allowed values are Income, Expense',
       },
-      uppercase: true,
+      default: 'Expense',
     },
     amount: {
       type: Number,
@@ -29,17 +29,35 @@ const transactionSchema = new mongoose.Schema(
     category: {
       type: String,
       trim: true,
-      default: 'General',
+      default: 'Operations',
     },
     date: {
+      type: String,
+      default: 'Just now',
+    },
+    recordedAt: {
       type: Date,
       default: Date.now,
     },
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        return ret;
+      },
+    },
   }
 );
 
-// Export as both Transaction and Finance model for compatibility
 module.exports = mongoose.models.Transaction || mongoose.model('Transaction', transactionSchema);
+

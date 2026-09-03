@@ -1,5 +1,50 @@
 const mongoose = require('mongoose');
 
+const milestoneSchema = new mongoose.Schema(
+  {
+    id: {
+      type: String,
+      default: () => `m_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    },
+    text: {
+      type: String,
+      required: [true, 'Milestone text is required'],
+      trim: true,
+    },
+    completed: {
+      type: Boolean,
+      default: false,
+    },
+    completedAt: {
+      type: Date,
+      default: null,
+    },
+  },
+  { _id: false }
+);
+
+const progressHistorySchema = new mongoose.Schema(
+  {
+    date: {
+      type: String,
+      default: () => 'Today',
+    },
+    progress: {
+      type: Number,
+      required: true,
+    },
+    note: {
+      type: String,
+      default: '',
+    },
+    timestamp: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
 const goalSchema = new mongoose.Schema(
   {
     userId: {
@@ -21,7 +66,7 @@ const goalSchema = new mongoose.Schema(
     category: {
       type: String,
       trim: true,
-      default: 'General',
+      default: 'Career',
     },
     progress: {
       type: Number,
@@ -32,27 +77,50 @@ const goalSchema = new mongoose.Schema(
     priority: {
       type: String,
       enum: {
-        values: ['LOW', 'MEDIUM', 'HIGH'],
+        values: ['LOW', 'MEDIUM', 'HIGH', 'Low', 'Medium', 'High'],
         message: '{VALUE} is not a valid goal priority',
       },
-      default: 'MEDIUM',
-      uppercase: true,
+      default: 'Medium',
     },
     targetDate: {
-      type: Date,
+      type: String,
+      default: 'Dec 31',
     },
     status: {
       type: String,
       enum: {
-        values: ['NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ON_HOLD'],
+        values: ['Active', 'Completed', 'Archived', 'NOT_STARTED', 'IN_PROGRESS', 'COMPLETED', 'ON_HOLD'],
         message: '{VALUE} is not a valid goal status',
       },
-      default: 'IN_PROGRESS',
-      uppercase: true,
+      default: 'Active',
     },
+    createdDate: {
+      type: String,
+      default: () => 'Today',
+    },
+    completedDate: {
+      type: String,
+      default: null,
+    },
+    progressHistory: [progressHistorySchema],
+    milestones: [milestoneSchema],
   },
   {
     timestamps: true,
+    toJSON: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        return ret;
+      },
+    },
+    toObject: {
+      virtuals: true,
+      transform: function (doc, ret) {
+        ret.id = ret._id ? ret._id.toString() : ret.id;
+        return ret;
+      },
+    },
   }
 );
 

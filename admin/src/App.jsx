@@ -1,122 +1,84 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import React, { useState } from 'react';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import Sidebar from './components/Sidebar';
+import Header from './components/Header';
+import Login from './pages/Login';
+import Dashboard from './pages/Dashboard';
+import ManageUsers from './pages/ManaggeUsers';
+import Reports from './pages/Reports';
+import Activity from './pages/Activity';
+import SystemSettings from './pages/SystemSettings';
+import './index.css';
 
-function App() {
-  const [count, setCount] = useState(0)
+function AdminAppContent() {
+  const { isAuthenticated, loading } = useAuth();
+  const [activeTab, setActiveTab] = useState('dashboard');
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  if (loading) {
+    return (
+      <div className="login-screen">
+        <div style={{ color: 'var(--text-secondary)', textAlign: 'center' }}>
+          <p>Initializing HumanOS Admin Console...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Login />;
+  }
+
+  const getPageMeta = () => {
+    switch (activeTab) {
+      case 'dashboard':
+        return { title: 'Executive Overview', kicker: 'System Telemetry & Health' };
+      case 'users':
+        return { title: 'User Management', kicker: 'Account Directory & Access Control' };
+      case 'reports':
+        return { title: 'Reports & Analytics', kicker: 'System Aggregations' };
+      case 'activity':
+        return { title: 'Audit Trail', kicker: 'System Activity Logs' };
+      case 'settings':
+        return { title: 'System Configuration', kicker: 'Global Platform Preferences' };
+      default:
+        return { title: 'Admin Console', kicker: 'Executive Suite' };
+    }
+  };
+
+  const { title, kicker } = getPageMeta();
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="app-container">
+      {/* Sidebar Navigation */}
+      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
 
-      <div className="ticks"></div>
+      {/* Main Content Area */}
+      <div className="main-content-wrapper">
+        <Header
+          title={title}
+          kicker={kicker}
+          onRefresh={() => setRefreshKey((prev) => prev + 1)}
+        />
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+        <main className="page-body">
+          {activeTab === 'dashboard' && (
+            <Dashboard key={refreshKey} onNavigateTab={(tab) => setActiveTab(tab)} />
+          )}
+          {activeTab === 'users' && <ManageUsers key={refreshKey} />}
+          {activeTab === 'reports' && <Reports key={refreshKey} />}
+          {activeTab === 'activity' && <Activity key={refreshKey} />}
+          {activeTab === 'settings' && <SystemSettings key={refreshKey} />}
+        </main>
+      </div>
+    </div>
+  );
 }
 
-export default App
+export default function App() {
+  return (
+    <AuthProvider>
+      <AdminAppContent />
+    </AuthProvider>
+  );
+}

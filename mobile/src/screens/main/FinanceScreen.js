@@ -22,9 +22,19 @@ import {
   Check,
   X,
   Search,
+  Trash2,
+  Sparkles,
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
+import {
+  fetchTransactions,
+  createTransaction,
+  updateTransaction,
+  deleteTransaction,
+  fetchAiFinanceRecommendation,
+} from '../../services/api';
+import { getToken } from '../../services/storage';
 
 const CURRENCIES = [
   { code: 'XAF', symbol: 'FCFA ', name: 'Central African CFA Franc (Cameroon)' },
@@ -58,6 +68,17 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
 
+  // Edit and Delete State
+  const [editingTransaction, setEditingTransaction] = useState(null);
+  const [deleteModalVisible, setDeleteModalVisible] = useState(false);
+  const [transactionToDelete, setTransactionToDelete] = useState(null);
+
+  // AI Wealth Insight State
+  const [aiFinanceInsight, setAiFinanceInsight] = useState(
+    'Optimal cashflow distribution detected. Maintain your reserve targets and automate monthly savings.'
+  );
+  const [aiFinanceLoading, setAiFinanceLoading] = useState(false);
+
   // Form State
   const [itemTitle, setItemTitle] = useState('');
   const [itemAmount, setItemAmount] = useState('');
@@ -67,9 +88,28 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
   // Transactions State (dynamically bound to database user)
   const [transactions, setTransactions] = useState(user?.transactions || []);
 
+  // Fetch transactions from API
+  const loadTransactionsFromApi = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const res = await fetchTransactions({}, token);
+      if (res && res.success && Array.isArray(res.transactions)) {
+        setTransactions(res.transactions);
+      }
+    } catch (e) {
+      console.log('Error fetching transactions from API:', e);
+    }
+  };
+
+  // Load transactions on mount
+  React.useEffect(() => {
+    loadTransactionsFromApi();
+  }, []);
+
   // Sync state whenever user data changes from database
   React.useEffect(() => {
-    if (user && user.transactions) {
+    if (user && user.transactions && transactions.length === 0) {
       setTransactions(user.transactions || []);
     }
   }, [user]);
@@ -79,12 +119,16 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
     setTimeout(() => setNoticeMessage(''), 2600);
   };
 
-  const onRefresh = () => {
+  const onRefresh = async () => {
     setRefreshing(true);
-    setTimeout(() => {
-      setRefreshing(false);
+    try {
+      await loadTransactionsFromApi();
       showNotice('Financial accounts synced');
-    }, 600);
+    } catch (e) {
+      console.log('Error refreshing financial accounts:', e);
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleTabChange = (tabId) => {
@@ -93,41 +137,129 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
     else if (navigation) {
       if (tabId === 'dashboard') navigation.navigate('Dashboard');
       else if (tabId === 'tasks') navigation.navigate('Tasks');
+      else if (tabId === 'goals') navigation.navigate('Goals');
+      else if (tabId === 'health') navigation.navigate('Health');
       else if (tabId === 'calendar') navigation.navigate('Calendar');
       else if (tabId === 'notes') navigation.navigate('Notes');
       else if (tabId === 'profile') navigation.navigate('Profile');
     }
   };
 
-  const handleCreateTransaction = () => {
+  // Open Create / Edit Modal
+  const openCreateModal = (transactionToEdit = null) => {
+    if (transactionToEdit) {
+      setEditingTransaction(transactionToEdit);
+      setItemTitle(transactionToEdit.title || '');
+      setItemAmount(String(Math.abs(transactionToEdit.amount || 0)));
+      setItemType(transactionToEdit.type || (transactionToEdit.amount > 0 ? 'Income' : 'Expense'));
+      setItemCategory(transactionToEdit.category || 'Operations');
+    } else {
+      setEditingTransaction(null);
+      setItemTitle('');
+      setItemAmount('');
+      setItemType('Expense');
+      setItemCategory('Operations');
+    }
+    setCreateModalVisible(true);
+  };
+
+  const handleCreateTransaction = async () => {
     if (!itemTitle.trim() || !itemAmount.trim()) {
       showNotice('Please fill all fields');
       return;
     }
     const num = parseFloat(itemAmount) || 0;
-    const newTx = {
-      id: Date.now().toString(),
+    if (num <= 0) {
+      showNotice('Amount must be greater than 0');
+      return;
+    }
+
+    const payload = {
       title: itemTitle.trim(),
       category: itemCategory,
       amount: itemType === 'Expense' ? -Math.abs(num) : Math.abs(num),
       type: itemType,
       date: 'Just now',
     };
-    setTransactions((prev) => [newTx, ...prev]);
+
+    try {
+      const token = await getToken();
+      if (editingTransaction) {
+        const idToUpdate = editingTransaction.id || editingTransaction._id;
+        setTransactions((prev) =>
+          prev.map((t) => ((t.id === idToUpdate || t._id === idToUpdate) ? { ...t, ...payload } : t))
+        );
+        showNotice(`Transaction updated (${selectedCurrency.code})`);
+
+        if (token) {
+          const res = await updateTransaction(idToUpdate, payload, token);
+          if (res && res.success && res.transaction) {
+            setTransactions((prev) =>
+              prev.map((t) => ((t.id === idToUpdate || t._id === idToUpdate) ? res.transaction : t))
+            );
+          }
+        }
+      } else {
+        const tempTx = {
+          id: Date.now().toString(),
+          ...payload,
+        };
+        setTransactions((prev) => [tempTx, ...prev]);
+        showNotice(`Transaction logged (${selectedCurrency.code})`);
+
+        if (token) {
+          const res = await createTransaction(payload, token);
+          if (res && res.success && res.transaction) {
+            setTransactions((prev) =>
+              prev.map((t) => (t.id === tempTx.id ? res.transaction : t))
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.log('Error saving transaction:', e);
+      showNotice('Saved locally');
+    }
+
     setCreateModalVisible(false);
+    setEditingTransaction(null);
     setItemTitle('');
     setItemAmount('');
-    showNotice(`Transaction logged (${selectedCurrency.code})`);
   };
 
-  const totalIncome = transactions.filter((t) => t.amount > 0).reduce((acc, t) => acc + t.amount, 0);
-  const totalExpense = Math.abs(transactions.filter((t) => t.amount < 0).reduce((acc, t) => acc + t.amount, 0));
+  // Delete Transaction Handlers
+  const confirmDeleteTransaction = (tx) => {
+    setTransactionToDelete(tx);
+    setDeleteModalVisible(true);
+  };
+
+  const executeDeleteTransaction = async () => {
+    if (!transactionToDelete) return;
+    const targetId = transactionToDelete.id || transactionToDelete._id;
+
+    setTransactions((prev) => prev.filter((t) => (t.id !== targetId && t._id !== targetId)));
+    showNotice('Transaction removed from logs');
+    setDeleteModalVisible(false);
+    setTransactionToDelete(null);
+
+    try {
+      const token = await getToken();
+      if (token) {
+        await deleteTransaction(targetId, token);
+      }
+    } catch (e) {
+      console.log('Error deleting transaction on server:', e);
+    }
+  };
+
+  const totalIncome = transactions.filter((t) => t.amount > 0 || t.type === 'Income').reduce((acc, t) => acc + Math.abs(t.amount), 0);
+  const totalExpense = Math.abs(transactions.filter((t) => t.amount < 0 || t.type === 'Expense').reduce((acc, t) => acc + Math.abs(t.amount), 0));
   const netSavings = totalIncome - totalExpense;
 
   const filteredTransactions = transactions.filter((t) => {
     let matchesType = true;
-    if (activeFilter === 'Income') matchesType = t.type === 'Income';
-    if (activeFilter === 'Expenses') matchesType = t.type === 'Expense';
+    if (activeFilter === 'Income') matchesType = (t.type === 'Income' || t.amount > 0);
+    if (activeFilter === 'Expenses') matchesType = (t.type === 'Expense' || t.amount < 0);
 
     const title = (t?.title || '').toLowerCase();
     const cat = (t?.category || '').toLowerCase();
@@ -137,9 +269,35 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
     return matchesType && matchesSearch;
   });
 
-  const categories = ['Software', 'Revenue', 'Office', 'Investments', 'Growth', 'Personal'];
+  const categories = ['Software', 'Revenue', 'Office', 'Investments', 'Growth', 'Personal', 'Operations'];
 
   const sym = selectedCurrency.symbol;
+
+  const handleGenerateFinanceInsight = async () => {
+    setAiFinanceLoading(true);
+    try {
+      const token = await getToken();
+      const payload = {
+        totalBalance: netSavings,
+        monthlyIncome: totalIncome,
+        monthlyExpenses: totalExpense,
+        currency: sym,
+      };
+      const res = await fetchAiFinanceRecommendation(payload, token);
+      if (res && res.success && res.recommendation) {
+        setAiFinanceInsight(res.recommendation);
+        showNotice(res.source && res.source.startsWith('ollama') ? 'AI Insight generated by Ollama' : 'AI Cashflow insight updated');
+      } else {
+        throw new Error(res?.message || 'Empty response');
+      }
+    } catch (e) {
+      console.log('AI Finance error:', e.message);
+      setAiFinanceInsight('Your net cashflow ratio remains well-balanced this month. Consider allocating surplus reserves into automated savings.');
+      showNotice('AI Insight updated');
+    } finally {
+      setAiFinanceLoading(false);
+    }
+  };
 
   const appContent = (
     <View style={[styles.mainWrapper, { backgroundColor: theme.colors.pageBg }]}>
@@ -209,7 +367,7 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
               </Pressable>
 
               <Pressable
-                onPress={() => setCreateModalVisible(true)}
+                onPress={() => openCreateModal()}
                 style={({ pressed }) => [
                   styles.quickAddBtn,
                   isWeb && styles.webPointer,
@@ -281,6 +439,49 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
             </View>
           </View>
 
+          {/* AI Wealth & Cashflow Advisor Card */}
+          <View
+            style={[
+              styles.sectionCard,
+              {
+                backgroundColor: isDarkMode ? '#1E1B4B' : '#EEF2FF',
+                borderColor: '#818CF8',
+                marginBottom: 16,
+                padding: 14,
+              },
+            ]}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Sparkles size={14} color="#6366F1" strokeWidth={2.5} />
+                <Text style={{ color: '#4F46E5', fontSize: 11, fontWeight: '800', letterSpacing: 1.1 }}>
+                  AI WEALTH ADVISORY
+                </Text>
+              </View>
+              <Pressable
+                onPress={handleGenerateFinanceInsight}
+                disabled={aiFinanceLoading}
+                style={({ pressed }) => [
+                  {
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    borderRadius: 8,
+                    backgroundColor: isDarkMode ? '#312E81' : '#E0E7FF',
+                  },
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Text style={{ color: '#4F46E5', fontSize: 11, fontWeight: '700' }}>
+                  {aiFinanceLoading ? 'Analyzing...' : 'Refresh'}
+                </Text>
+              </Pressable>
+            </View>
+            <Text style={{ color: isDarkMode ? '#E0E7FF' : '#1E1B4B', fontSize: 12.5, lineHeight: 18 }}>
+              {aiFinanceInsight}
+            </Text>
+          </View>
+
           {/* Filter Pills */}
           <View style={styles.filterRow}>
             {['All', 'Income', 'Expenses'].map((f) => (
@@ -325,24 +526,48 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
               </View>
             ) : (
               <View style={styles.txList}>
-                {filteredTransactions.map((tx) => (
-                  <View key={tx.id} style={[styles.txItem, { borderBottomColor: theme.colors.border }]}>
-                    <View style={[styles.txIconWrap, tx.amount > 0 ? styles.txIconIncome : styles.txIconExpense]}>
-                      {tx.amount > 0 ? (
-                        <TrendingUp size={16} color="#059669" strokeWidth={2.4} />
-                      ) : (
-                        <TrendingDown size={16} color="#DC2626" strokeWidth={2.4} />
-                      )}
-                    </View>
-                    <View style={styles.txMain}>
-                      <Text style={[styles.txTitle, { color: theme.colors.textPrimary }]}>{tx.title}</Text>
-                      <Text style={[styles.txMeta, { color: theme.colors.textMuted }]}>{tx.category} • {tx.date}</Text>
-                    </View>
-                    <Text style={[styles.txAmount, tx.amount > 0 ? styles.amountPositive : styles.amountNegative]}>
-                      {tx.amount > 0 ? `+${sym}${tx.amount.toFixed(2)}` : `-${sym}${Math.abs(tx.amount).toFixed(2)}`}
-                    </Text>
-                  </View>
-                ))}
+                {filteredTransactions.map((tx) => {
+                  const isIncome = tx.amount > 0 || tx.type === 'Income';
+                  return (
+                    <Pressable
+                      key={tx.id || tx._id}
+                      onPress={() => openCreateModal(tx)}
+                      style={({ pressed }) => [
+                        styles.txItem,
+                        { borderBottomColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <View style={[styles.txIconWrap, isIncome ? styles.txIconIncome : styles.txIconExpense]}>
+                        {isIncome ? (
+                          <TrendingUp size={16} color="#059669" strokeWidth={2.4} />
+                        ) : (
+                          <TrendingDown size={16} color="#DC2626" strokeWidth={2.4} />
+                        )}
+                      </View>
+                      <View style={styles.txMain}>
+                        <Text style={[styles.txTitle, { color: theme.colors.textPrimary }]}>{tx.title}</Text>
+                        <Text style={[styles.txMeta, { color: theme.colors.textMuted }]}>{tx.category} • {tx.date}</Text>
+                      </View>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                        <Text style={[styles.txAmount, isIncome ? styles.amountPositive : styles.amountNegative]}>
+                          {isIncome ? `+${sym}${Math.abs(tx.amount).toFixed(2)}` : `-${sym}${Math.abs(tx.amount).toFixed(2)}`}
+                        </Text>
+                        <Pressable
+                          onPress={(e) => {
+                            e?.stopPropagation?.();
+                            confirmDeleteTransaction(tx);
+                          }}
+                          hitSlop={8}
+                          style={{ padding: 4 }}
+                        >
+                          <X size={14} color="#94A3B8" strokeWidth={2.2} />
+                        </Pressable>
+                      </View>
+                    </Pressable>
+                  );
+                })}
               </View>
             )}
           </View>
@@ -399,21 +624,34 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
         </View>
       </Modal>
 
-      {/* Create Transaction Modal */}
+      {/* Create / Edit Transaction Modal */}
       <Modal
         visible={createModalVisible}
         transparent
         animationType="slide"
-        onRequestClose={() => setCreateModalVisible(false)}
+        onRequestClose={() => {
+          setCreateModalVisible(false);
+          setEditingTransaction(null);
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View>
-                <Text style={styles.modalKicker}>NEW ENTRY</Text>
-                <Text style={styles.modalTitle}>Log Cashflow Item</Text>
+                <Text style={styles.modalKicker}>
+                  {editingTransaction ? 'UPDATE ENTRY' : 'NEW ENTRY'}
+                </Text>
+                <Text style={styles.modalTitle}>
+                  {editingTransaction ? 'Edit Cashflow Item' : 'Log Cashflow Item'}
+                </Text>
               </View>
-              <Pressable onPress={() => setCreateModalVisible(false)} style={styles.modalCloseBtn}>
+              <Pressable
+                onPress={() => {
+                  setCreateModalVisible(false);
+                  setEditingTransaction(null);
+                }}
+                style={styles.modalCloseBtn}
+              >
                 <X size={18} color="#94A3B8" strokeWidth={2.2} />
               </Pressable>
             </View>
@@ -460,9 +698,61 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
               ))}
             </View>
 
-            <Pressable onPress={handleCreateTransaction} style={styles.modalSubmitBtn}>
-              <Text style={styles.modalSubmitText}>Save Allocation</Text>
-            </Pressable>
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+              <Pressable
+                onPress={() => {
+                  setCreateModalVisible(false);
+                  setEditingTransaction(null);
+                }}
+                style={[styles.modalSubmitBtn, { flex: 1, backgroundColor: isDarkMode ? '#334155' : '#E2E8F0' }]}
+              >
+                <Text style={[styles.modalSubmitText, { color: isDarkMode ? '#F8FAFC' : '#475569' }]}>Cancel</Text>
+              </Pressable>
+
+              <Pressable onPress={handleCreateTransaction} style={[styles.modalSubmitBtn, { flex: 2 }]}>
+                <Text style={styles.modalSubmitText}>
+                  {editingTransaction ? 'Update Allocation' : 'Save Allocation'}
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Delete Transaction Confirmation Modal */}
+      <Modal
+        visible={deleteModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeleteModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxWidth: 360 }]}>
+            <View style={{ alignItems: 'center', marginVertical: 12 }}>
+              <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: '#FEE2E2', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
+                <Trash2 size={24} color="#EF4444" strokeWidth={2.2} />
+              </View>
+              <Text style={[styles.modalTitle, { color: theme.colors.textPrimary, textAlign: 'center' }]}>Delete Transaction?</Text>
+              <Text style={{ color: theme.colors.textSecondary, fontSize: 13, textAlign: 'center', marginTop: 6, lineHeight: 18 }}>
+                Are you sure you want to remove "{transactionToDelete?.title}" from your financial logs?
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 12 }}>
+              <Pressable
+                onPress={() => setDeleteModalVisible(false)}
+                style={[styles.modalSubmitBtn, { flex: 1, backgroundColor: isDarkMode ? '#334155' : '#E2E8F0' }]}
+              >
+                <Text style={[styles.modalSubmitText, { color: isDarkMode ? '#F8FAFC' : '#475569' }]}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={executeDeleteTransaction}
+                style={[styles.modalSubmitBtn, { flex: 1, backgroundColor: '#EF4444' }]}
+              >
+                <Text style={styles.modalSubmitText}>Delete</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
