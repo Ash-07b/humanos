@@ -33,7 +33,7 @@ import {
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
-import { fetchAiGeneralAssistant, fetchUserProfile } from '../../services/api';
+import { fetchAiGeneralAssistant, fetchUserProfile, fetchTasks } from '../../services/api';
 import { getToken, saveUser } from '../../services/storage';
 import Logo from '../../components/Logo';
 
@@ -81,11 +81,48 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
   const [tasks, setTasks] = useState(user?.tasks || user?.intentions || []);
   const [habits, setHabits] = useState(user?.habits || []);
 
+  // Load dashboard data from live database API
+  const loadDashboardData = async () => {
+    try {
+      const token = await getToken();
+      if (!token) return;
+      const [profileRes, taskRes] = await Promise.all([
+        fetchUserProfile(token),
+        fetchTasks({}, token),
+      ]);
+      if (profileRes && profileRes.success && profileRes.user) {
+        const updated = {
+          ...(user || {}),
+          ...profileRes.user,
+          profilePic: profileRes.user.profilePicture || profileRes.user.profilePic || (user && (user.profilePic || user.profilePicture)) || '⚡',
+          profilePicture: profileRes.user.profilePicture || profileRes.user.profilePic,
+        };
+        await saveUser(updated);
+        if (onUpdateUser) {
+          onUpdateUser(updated);
+        }
+      }
+      if (taskRes && taskRes.success && Array.isArray(taskRes.tasks)) {
+        setTasks(taskRes.tasks.map(t => ({
+          ...t,
+          done: t.status === 'COMPLETED',
+        })));
+      }
+    } catch (e) {
+      console.log('Error fetching live dashboard data:', e);
+    }
+  };
+
+  // Load live data on mount
+  React.useEffect(() => {
+    loadDashboardData();
+  }, []);
+
   // Sync state whenever user data changes from database
   React.useEffect(() => {
     if (user) {
       if (user.tasks || user.intentions) {
-        setTasks(user.tasks || user.intentions || []);
+        setTasks((prev) => (prev.length === 0 ? (user.tasks || user.intentions || []) : prev));
       }
       if (user.habits) {
         setHabits(user.habits || []);
@@ -104,24 +141,9 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      const token = await getToken();
-      if (token) {
-        const res = await fetchUserProfile(token);
-        if (res && res.success && res.user) {
-          const updated = {
-            ...(user || {}),
-            ...res.user,
-            profilePic: res.user.profilePicture || res.user.profilePic || (user && (user.profilePic || user.profilePicture)) || '⚡',
-            profilePicture: res.user.profilePicture || res.user.profilePic,
-          };
-          await saveUser(updated);
-          if (onUpdateUser) {
-            onUpdateUser(updated);
-          }
-        }
-      }
+      await loadDashboardData();
     } catch (e) {
-      console.log('Error refreshing user profile:', e);
+      console.log('Error refreshing dashboard:', e);
     } finally {
       setTimeout(() => {
         setRefreshing(false);
