@@ -1,10 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import {
   Users,
+  CheckCircle2,
+  XCircle,
+  ListTodo,
+  Target,
+  HeartPulse,
+  WalletCards,
+  FileText,
+  Bell,
+  Sparkles,
   ArrowUpRight,
   Clock,
   ShieldCheck,
 } from 'lucide-react';
+import StatCard from '../components/StatCard';
 import { fetchDashboardOverview } from '../services/api';
 
 export default function Dashboard({ onNavigateTab }) {
@@ -54,6 +64,90 @@ export default function Dashboard({ onNavigateTab }) {
 
   return (
     <div>
+      {/* Top 4 System Metrics */}
+      <div className="stats-grid">
+        <StatCard
+          label="Total Registered Users"
+          value={users.total || 0}
+          subtext={`${users.clients || 0} Clients • ${users.admins || 0} Admins`}
+          icon={Users}
+          color="#6366F1"
+          bg="rgba(99, 102, 241, 0.15)"
+        />
+        <StatCard
+          label="Active Accounts"
+          value={users.active || 0}
+          subtext={`${users.total > 0 ? Math.round((users.active / users.total) * 100) : 0}% platform health`}
+          icon={CheckCircle2}
+          color="#10B981"
+          bg="rgba(16, 185, 129, 0.15)"
+        />
+        <StatCard
+          label="Disabled Accounts"
+          value={users.disabled || 0}
+          subtext="Access restricted"
+          icon={XCircle}
+          color="#EF4444"
+          bg="rgba(239, 68, 68, 0.15)"
+        />
+        <StatCard
+          label="AI Recommendations"
+          value={modules.ai?.insightsGenerated || 0}
+          subtext="Ollama llama3.2 generations"
+          icon={Sparkles}
+          color="#06B6D4"
+          bg="rgba(6, 182, 212, 0.15)"
+        />
+      </div>
+
+      {/* Module Overview Cards */}
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+        <div className="stat-card">
+          <div className="stat-header">
+            <span className="stat-label">Tasks Created</span>
+            <ListTodo size={16} color="#6366F1" />
+          </div>
+          <div className="stat-value">{modules.tasks?.total || 0}</div>
+          <div className="stat-subtext">{modules.tasks?.completed || 0} completed</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-header">
+            <span className="stat-label">Goals Tracked</span>
+            <Target size={16} color="#F59E0B" />
+          </div>
+          <div className="stat-value">{modules.goals?.total || 0}</div>
+          <div className="stat-subtext">{modules.goals?.completed || 0} completed</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-header">
+            <span className="stat-label">Health Telemetry</span>
+            <HeartPulse size={16} color="#EC4899" />
+          </div>
+          <div className="stat-value">{modules.health?.records || 0}</div>
+          <div className="stat-subtext">{modules.health?.medications || 0} medications</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-header">
+            <span className="stat-label">Financial Activity</span>
+            <WalletCards size={16} color="#10B981" />
+          </div>
+          <div className="stat-value">{modules.finance?.transactions || 0}</div>
+          <div className="stat-subtext">Transactions logged</div>
+        </div>
+
+        <div className="stat-card">
+          <div className="stat-header">
+            <span className="stat-label">Knowledge Notes</span>
+            <FileText size={16} color="#8B5CF6" />
+          </div>
+          <div className="stat-value">{modules.notes?.total || 0}</div>
+          <div className="stat-subtext">Captured items</div>
+        </div>
+      </div>
+
       {/* Main Panel Grid */}
       <div className="panel-grid">
         {/* Recent Users Table */}
