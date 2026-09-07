@@ -1,15 +1,29 @@
-import { Platform } from 'react-native';
+import { Platform, NativeModules } from 'react-native';
 
 /**
- * Determine the appropriate API base URL based on runtime platform
+ * Determine the appropriate API base URL based on runtime platform and environment
  */
 const getBaseUrl = () => {
-  if (Platform.OS === 'android') {
-    // Android emulator loops back to host machine via 10.0.2.2
-    return 'http://10.0.2.2:5000/api';
+  if (Platform.OS === 'web') {
+    return 'http://localhost:5000/api';
   }
-  // iOS simulator, desktop web, and node environments
-  return 'http://localhost:5000/api';
+
+  // Detect the host machine IP dynamically from Metro bundle scriptURL (used by Expo Go on physical phones)
+  try {
+    const scriptURL = NativeModules?.SourceCode?.scriptURL;
+    if (scriptURL) {
+      const match = scriptURL.match(/https?:\/\/([^:\/]+)/);
+      const host = match ? match[1] : null;
+      if (host && host !== 'localhost' && host !== '127.0.0.1') {
+        return `http://${host}:5000/api`;
+      }
+    }
+  } catch (e) {
+    // fallback
+  }
+
+  // Default LAN IP for physical device connection
+  return 'http://192.168.1.176:5000/api';
 };
 
 export const API_BASE_URL = getBaseUrl();
@@ -28,7 +42,9 @@ const apiRequest = async (endpoint, options = {}) => {
 
   try {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000); // 12-second timeout
+    const isAi = endpoint.startsWith('/ai');
+    const timeoutMs = options.timeout || (isAi ? 60000 : 15000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     const response = await fetch(url, {
       ...options,

@@ -151,9 +151,11 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
   const recordTypes = [
     { type: 'Heart Rate', icon: HeartPulse, defaultUnit: 'bpm', iconBg: '#FFE4E6', iconColor: '#E11D48' },
     { type: 'Blood Pressure', icon: Activity, defaultUnit: 'mmHg', iconBg: '#E0F2FE', iconColor: '#0284C7' },
+    { type: 'Sleep', icon: Moon, defaultUnit: 'hours', iconBg: '#EDE9FE', iconColor: '#7C3AED' },
     { type: 'Weight', icon: Scale, defaultUnit: 'kg', iconBg: '#CCFBF1', iconColor: '#0F766E' },
     { type: 'Temperature', icon: Thermometer, defaultUnit: '°C', iconBg: '#FEF3C7', iconColor: '#D97706' },
     { type: 'Blood Oxygen', icon: Wind, defaultUnit: '% SpO2', iconBg: '#F0FDFA', iconColor: '#0D9488' },
+    { type: 'Steps', icon: Zap, defaultUnit: 'steps', iconBg: '#FEF9C3', iconColor: '#CA8A04' },
     { type: 'Other', icon: ClipboardList, defaultUnit: 'units', iconBg: '#F1F5F9', iconColor: '#475569' },
   ];
 
@@ -537,7 +539,15 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
 
             {/* 3 Summary indicators */}
             <View style={styles.indicatorsRow}>
-              <View style={[styles.indicatorCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+              <Pressable
+                onPress={() => handleOpenRecordModal('Heart Rate')}
+                style={({ pressed }) => [
+                  styles.indicatorCard,
+                  { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
                 <View style={[styles.indicatorIconWrap, { backgroundColor: '#FFE4E6' }]}>
                   <HeartPulse size={18} color="#E11D48" strokeWidth={2.2} />
                 </View>
@@ -547,19 +557,37 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                     : '-- bpm'}
                 </Text>
                 <Text style={[styles.indicatorLabel, { color: theme.colors.textMuted }]}>Heart Rate</Text>
-              </View>
+              </Pressable>
 
-              <View style={[styles.indicatorCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
-                <View style={[styles.indicatorIconWrap, { backgroundColor: '#EEF2FF' }]}>
-                  <Moon size={18} color="#4F46E5" strokeWidth={2.2} />
+              <Pressable
+                onPress={() => handleOpenRecordModal('Sleep')}
+                style={({ pressed }) => [
+                  styles.indicatorCard,
+                  { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <View style={[styles.indicatorIconWrap, { backgroundColor: '#EDE9FE' }]}>
+                  <Moon size={18} color="#7C3AED" strokeWidth={2.2} />
                 </View>
                 <Text style={[styles.indicatorValue, { color: theme.colors.textPrimary }]}>
-                  {user?.sleepDuration || records.find((r) => r.type === 'Sleep')?.value || '--'}
+                  {records.find((r) => r.type === 'Sleep')?.value
+                    ? `${records.find((r) => r.type === 'Sleep').value} ${records.find((r) => r.type === 'Sleep').unit || 'hrs'}`
+                    : (user?.sleepDuration || '-- hrs')}
                 </Text>
                 <Text style={[styles.indicatorLabel, { color: theme.colors.textMuted }]}>Sleep</Text>
-              </View>
+              </Pressable>
 
-              <View style={[styles.indicatorCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+              <Pressable
+                onPress={() => handleOpenRecordModal('Weight')}
+                style={({ pressed }) => [
+                  styles.indicatorCard,
+                  { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
                 <View style={[styles.indicatorIconWrap, { backgroundColor: '#CCFBF1' }]}>
                   <Scale size={18} color="#0F766E" strokeWidth={2.2} />
                 </View>
@@ -569,7 +597,7 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                     : '-- kg'}
                 </Text>
                 <Text style={[styles.indicatorLabel, { color: theme.colors.textMuted }]}>Weight</Text>
-              </View>
+              </Pressable>
             </View>
           </View>
 
@@ -911,7 +939,11 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
             </View>
 
             {(() => {
-              const sleepHours = user?.healthTrends?.sleepHours ?? user?.sleepHours ?? 0;
+              const sleepRec = records.find((r) => r.type === 'Sleep');
+              const parsedSleep = sleepRec ? parseFloat(sleepRec.value) : NaN;
+              const sleepHours = !isNaN(parsedSleep) && parsedSleep > 0
+                ? parsedSleep
+                : (user?.healthTrends?.sleepHours ?? user?.sleepHours ?? 0);
               const sleepTarget = user?.healthTrends?.sleepTarget ?? 8;
               const sleepPercent = sleepHours > 0 ? Math.min(100, Math.round((sleepHours / sleepTarget) * 100)) : 0;
 

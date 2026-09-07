@@ -857,10 +857,10 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   {activeFilter === 'Today'
                     ? "Today's Tasks"
                     : activeFilter === 'Upcoming'
-                    ? 'Upcoming Tasks'
-                    : activeFilter === 'Completed'
-                    ? 'Completed Tasks'
-                    : 'All Tasks'}
+                      ? 'Upcoming Tasks'
+                      : activeFilter === 'Completed'
+                        ? 'Completed Tasks'
+                        : 'All Tasks'}
                 </Text>
               </View>
               <Pressable
@@ -969,18 +969,18 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                               isHigh
                                 ? styles.badgeHigh
                                 : isMed
-                                ? styles.badgeMedium
-                                : styles.badgeLow,
+                                  ? styles.badgeMedium
+                                  : styles.badgeLow,
                             ]}
                           >
                             <Text
                               style={[
                                 styles.priorityBadgeText,
                                 isHigh
-                                ? styles.badgeTextHigh
-                                : isMed
-                                ? styles.badgeTextMedium
-                                : styles.badgeTextLow,
+                                  ? styles.badgeTextHigh
+                                  : isMed
+                                    ? styles.badgeTextMedium
+                                    : styles.badgeTextLow,
                               ]}
                             >
                               {task.priority}
@@ -1241,8 +1241,8 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                             p === 'High'
                               ? styles.dotHigh
                               : p === 'Medium'
-                              ? styles.dotMedium
-                              : styles.dotLow,
+                                ? styles.dotMedium
+                                : styles.dotLow,
                           ]}
                         />
                         <Text
@@ -1362,8 +1362,8 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                     selectedTask?.priority === 'High'
                       ? 'Medium'
                       : selectedTask?.priority === 'Medium'
-                      ? 'Low'
-                      : 'High'
+                        ? 'Low'
+                        : 'High'
                   )
                 }
                 style={({ pressed }) => [
@@ -1522,8 +1522,8 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                             p === 'High'
                               ? styles.dotHigh
                               : p === 'Medium'
-                              ? styles.dotMedium
-                              : styles.dotLow,
+                                ? styles.dotMedium
+                                : styles.dotLow,
                           ]}
                         />
                         <Text
@@ -1564,6 +1564,10 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 </Pressable>
               </View>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* ==================== NOTIFICATIONS MODAL ==================== */}
       <Modal
         visible={notificationsModalVisible}

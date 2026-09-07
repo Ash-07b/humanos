@@ -7,6 +7,7 @@ import {
   View,
   ScrollView,
   Platform,
+  ImageBackground,
   useWindowDimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -37,7 +38,14 @@ export default function WelcomeScreen({ onBegin, onLogin }) {
       showsVerticalScrollIndicator={false}
       bounces={false}
     >
-      <View style={[styles.hero, { minHeight: Math.max(360, height * 0.46) }]}>
+      <ImageBackground
+        source={require('../../assets/landing-bg.jpg')}
+        style={[styles.hero, { minHeight: Math.max(360, height * 0.46) }]}
+        imageStyle={styles.heroBackgroundImage}
+        resizeMode="cover"
+      >
+        <View style={styles.heroOverlay} />
+
         <View style={styles.topBar}>
           <Logo size={36} textSize={20} textColor="#F8FAFC" />
           <Pressable style={({ pressed }) => [styles.menuButton, isWeb && styles.webPointer, pressed && styles.secondaryPressed]}>
@@ -57,13 +65,11 @@ export default function WelcomeScreen({ onBegin, onLogin }) {
           </Text>
         </View>
 
-        <View style={styles.orbLarge} />
-        <View style={styles.orbSmall} />
         <View style={styles.heroFooter}>
           <Text style={styles.footerCaption}>YOUR DAY, IN BALANCE</Text>
           <Text style={styles.footerNumber}>24</Text>
         </View>
-      </View>
+      </ImageBackground>
 
       <View style={styles.content}>
         <View style={styles.handle} />
@@ -169,29 +175,30 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F172A',
     paddingHorizontal: 24,
     paddingBottom: 40,
+    position: 'relative',
+  },
+  heroBackgroundImage: {
+    opacity: 0.75,
+  },
+  heroOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(10, 14, 26, 0.45)',
   },
   topBar: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingTop: 12 },
-  brandMark: { height: 25, justifyContent: 'center', width: 28 },
-  brandDot: { backgroundColor: '#818CF8', borderRadius: 8, height: 13, width: 13 },
-  brandDotOffset: { alignSelf: 'flex-end', backgroundColor: '#38BDF8', marginTop: -5 },
-  brand: { color: '#F8FAFC', flex: 1, fontSize: 19, fontWeight: '800', letterSpacing: -0.5, marginLeft: 8 },
   menuButton: { gap: 5, padding: 8 },
   menuLine: { backgroundColor: '#F8FAFC', borderRadius: 2, height: 2, width: 22 },
   menuLineShort: { alignSelf: 'flex-end', width: 13 },
-  heroContent: { marginTop: 54, maxWidth: 330 },
+  heroContent: { marginTop: 44, maxWidth: 330 },
   eyebrow: { alignItems: 'center', flexDirection: 'row', gap: 7, marginBottom: 16 },
   eyebrowPulse: { backgroundColor: '#818CF8', borderRadius: 5, height: 7, width: 7 },
   eyebrowText: { color: '#94A3B8', fontSize: 10, fontWeight: '800', letterSpacing: 1.4 },
   headline: { color: '#F8FAFC', fontSize: 40, fontWeight: '800', letterSpacing: -1.5, lineHeight: 45 },
-  heroCopy: { color: '#94A3B8', fontSize: 13.5, lineHeight: 20, marginTop: 14, maxWidth: 310 },
-  orbLarge: { backgroundColor: '#4338CA', borderRadius: 180, height: 270, opacity: 0.45, position: 'absolute', right: -120, top: 150, width: 270 },
-  orbSmall: { backgroundColor: '#0284C7', borderRadius: 50, bottom: 34, height: 18, opacity: 0.8, position: 'absolute', right: 57, width: 18 },
+  heroCopy: { color: '#CBD5E1', fontSize: 13.5, lineHeight: 20, marginTop: 14, maxWidth: 310 },
   heroFooter: { alignItems: 'flex-end', bottom: 17, flexDirection: 'row', justifyContent: 'space-between', left: 24, position: 'absolute', right: 24 },
-  footerCaption: { color: '#64748B', fontSize: 9, fontWeight: '800', letterSpacing: 1.2 },
+  footerCaption: { color: '#94A3B8', fontSize: 9, fontWeight: '800', letterSpacing: 1.2 },
   footerNumber: { color: '#818CF8', fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
   content: { backgroundColor: '#F8FAFC', borderTopLeftRadius: 30, borderTopRightRadius: 30, flex: 1, marginTop: -24, paddingHorizontal: 24, paddingTop: 13, paddingBottom: 28 },
   handle: { alignSelf: 'center', backgroundColor: '#CBD5E1', borderRadius: 3, height: 4, marginBottom: 20, width: 38 },
-  sectionLabel: { color: '#64748B', fontSize: 12.5, fontWeight: '600', marginBottom: 16 },
   card: { backgroundColor: '#FFFFFF', borderColor: '#E2E8F0', borderRadius: 22, borderWidth: 1, padding: 18, shadowColor: '#0F172A', shadowOffset: { height: 6, width: 0 }, shadowOpacity: 0.05, shadowRadius: 14, elevation: 3 },
   cardHeader: { alignItems: 'flex-start', flexDirection: 'row', justifyContent: 'space-between' },
   cardKicker: { color: '#6366F1', fontSize: 9, fontWeight: '800', letterSpacing: 1 },
@@ -207,7 +214,6 @@ const styles = StyleSheet.create({
   primaryButton: { alignItems: 'center', backgroundColor: '#4F46E5', borderRadius: 17, flexDirection: 'row', justifyContent: 'space-between', marginTop: 20, paddingBottom: 14, paddingLeft: 20, paddingRight: 12, paddingTop: 14, shadowColor: '#4F46E5', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 4 },
   primaryButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '700' },
   arrowCircle: { alignItems: 'center', backgroundColor: '#6366F1', borderRadius: 16, height: 32, justifyContent: 'center', width: 32 },
-  arrow: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', marginTop: -2 },
   secondaryButton: { alignItems: 'center', paddingVertical: 14 },
   secondaryButtonText: { color: '#4F46E5', fontSize: 13, fontWeight: '700' },
   buttonPressed: { opacity: 0.88, transform: [{ scale: 0.985 }] },

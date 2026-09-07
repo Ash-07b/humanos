@@ -474,12 +474,12 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
   const getPriorityColor = (priority) => {
     switch (priority?.toLowerCase()) {
       case 'high':
-        return { bg: '#FEE2E2', text: '#DC2626', border: '#FECACA' };
+        return { bg: isDarkMode ? 'rgba(239, 68, 68, 0.2)' : '#FEE2E2', text: '#EF4444', border: isDarkMode ? 'rgba(239, 68, 68, 0.4)' : '#FECACA' };
       case 'medium':
-        return { bg: '#FEF3C7', text: '#D97706', border: '#FDE68A' };
+        return { bg: isDarkMode ? 'rgba(245, 158, 11, 0.2)' : '#FEF3C7', text: '#F59E0B', border: isDarkMode ? 'rgba(245, 158, 11, 0.4)' : '#FDE68A' };
       case 'low':
       default:
-        return { bg: '#ECFDF5', text: '#059669', border: '#A7F3D0' };
+        return { bg: isDarkMode ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF', text: isDarkMode ? '#A5B4FC' : '#4F46E5', border: isDarkMode ? 'rgba(99, 102, 241, 0.35)' : '#C7D2FE' };
     }
   };
 
@@ -605,22 +605,22 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
           <View style={[styles.overviewCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.overviewHeaderRow}>
               <View>
-                <Text style={[styles.overviewKicker, { color: isDarkMode ? '#6EE7B7' : '#10B981' }]}>PROGRESS PULSE</Text>
+                <Text style={[styles.overviewKicker, { color: isDarkMode ? '#818CF8' : '#4F46E5' }]}>PROGRESS PULSE</Text>
                 <Text style={[styles.overviewTitle, { color: theme.colors.textPrimary }]}>Overall Goals Execution</Text>
               </View>
-              <View style={[styles.progressBadge, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#ECFDF5', borderColor: isDarkMode ? 'rgba(16, 185, 129, 0.4)' : '#A7F3D0' }]}>
-                <Text style={[styles.progressBadgeText, { color: isDarkMode ? '#6EE7B7' : '#059669' }]}>{overallProgress}%</Text>
+              <View style={[styles.progressBadge, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF', borderColor: isDarkMode ? 'rgba(99, 102, 241, 0.4)' : '#C7D2FE' }]}>
+                <Text style={[styles.progressBadgeText, { color: isDarkMode ? '#A5B4FC' : '#4F46E5' }]}>{overallProgress}%</Text>
               </View>
             </View>
 
-            {/* Single Main Horizontal Progress Bar (Lighter Modern Emerald/Mint Green) */}
-            <View style={[styles.progressBarTrack, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.18)' : '#ECFDF5' }]}>
+            {/* Single Main Horizontal Progress Bar */}
+            <View style={[styles.progressBarTrack, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.18)' : '#EEF2FF' }]}>
               <View
                 style={[
                   styles.progressBarFill,
                   {
                     width: `${Math.max(6, Math.min(100, overallProgress))}%`,
-                    backgroundColor: isDarkMode ? '#34D399' : '#10B981',
+                    backgroundColor: isDarkMode ? '#818CF8' : '#4F46E5',
                   },
                 ]}
               />
@@ -793,11 +793,11 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                       </Pressable>
                     </View>
 
-                    {/* Progress Summary Info Row (Without redundant second progress bar) */}
+                    {/* Progress Summary Info Row */}
                     <View style={styles.goalProgressSection}>
                       <View style={styles.progressInfoRow}>
-                        <View style={[styles.goalProgressPill, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.15)' : '#ECFDF5' }]}>
-                          <Text style={[styles.progressPercentLabel, { color: isDarkMode ? '#34D399' : '#059669' }]}>
+                        <View style={[styles.goalProgressPill, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF' }]}>
+                          <Text style={[styles.progressPercentLabel, { color: isDarkMode ? '#A5B4FC' : '#4F46E5' }]}>
                             {goal.progress}% Completed
                           </Text>
                         </View>
@@ -896,8 +896,8 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                   <Text style={styles.sectionSub}>VICTORIES & ACHIEVEMENTS</Text>
                   <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Completed Goals</Text>
                 </View>
-                <View style={[styles.completedBadge, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.2)' : '#DCFCE7' }]}>
-                  <Text style={[styles.completedBadgeText, { color: isDarkMode ? '#6EE7B7' : '#059669' }]}>
+                <View style={[styles.completedBadge, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF' }]}>
+                  <Text style={[styles.completedBadgeText, { color: isDarkMode ? '#A5B4FC' : '#4F46E5' }]}>
                     {completedGoals.length} finished
                   </Text>
                 </View>
@@ -906,8 +906,8 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
               <View style={styles.completedList}>
                 {completedGoals.map((cg) => (
                   <View key={cg.id} style={[styles.completedGoalCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
-                    <View style={styles.completedCheckCircle}>
-                      <Check size={11} color="#10B981" strokeWidth={3} />
+                    <View style={[styles.completedCheckCircle, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF' }]}>
+                      <Check size={11} color={isDarkMode ? '#818CF8' : '#4F46E5'} strokeWidth={3} />
                     </View>
                     <View style={styles.completedGoalBody}>
                       <Text style={[styles.completedGoalTitle, { color: theme.colors.textPrimary }]}>{cg.title}</Text>
@@ -1021,18 +1021,18 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                   <View style={[styles.detailBlock, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
                     <View style={styles.progressHeaderRow}>
                       <Text style={[styles.detailBlockLabel, { color: theme.colors.textPrimary }]}>Current Progress</Text>
-                      <Text style={[styles.detailProgressPercent, { color: isDarkMode ? '#34D399' : '#059669' }]}>
+                      <Text style={[styles.detailProgressPercent, { color: isDarkMode ? '#818CF8' : '#4F46E5' }]}>
                         {selectedGoal.progress}%
                       </Text>
                     </View>
 
-                    <View style={[styles.detailProgressTrack, { backgroundColor: isDarkMode ? 'rgba(16, 185, 129, 0.18)' : '#ECFDF5' }]}>
+                    <View style={[styles.detailProgressTrack, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.18)' : '#EEF2FF' }]}>
                       <View
                         style={[
                           styles.detailProgressFill,
                           {
                             width: `${selectedGoal.progress}%`,
-                            backgroundColor: isDarkMode ? '#34D399' : '#10B981',
+                            backgroundColor: isDarkMode ? '#818CF8' : '#4F46E5',
                           },
                         ]}
                       />
@@ -1842,13 +1842,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   categoryChipSelected: {
-    backgroundColor: '#183D30', // Dark green background
-    borderColor: '#183D30',
-    shadowColor: '#183D30',
+    backgroundColor: '#4F46E5', // HumanOS signature indigo blue
+    borderColor: '#4F46E5',
+    shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+    elevation: 3,
   },
   categoryChipUnselected: {
     backgroundColor: '#FFFFFF', // White/Cream appearance
@@ -2114,7 +2114,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#10B981',
+    backgroundColor: '#6366F1',
   },
 
   /* 11. GOAL INSIGHTS (AI CARD) */
@@ -2181,13 +2181,13 @@ const styles = StyleSheet.create({
 
   /* 8. COMPLETED GOALS */
   completedBadge: {
-    backgroundColor: '#DCFCE7',
+    backgroundColor: '#EEF2FF',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 8,
   },
   completedBadgeText: {
-    color: '#059669',
+    color: '#4F46E5',
     fontSize: 11,
     fontWeight: '700',
   },
@@ -2208,13 +2208,13 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: '#DCFCE7',
+    backgroundColor: '#EEF2FF',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
   completedCheckMark: {
-    color: '#059669',
+    color: '#4F46E5',
     fontSize: 14,
     fontWeight: '900',
   },
@@ -2283,13 +2283,13 @@ const styles = StyleSheet.create({
     lineHeight: 17,
   },
   emptyStateBtn: {
-    backgroundColor: '#D6EF90',
+    backgroundColor: '#4F46E5',
     paddingHorizontal: 18,
     paddingVertical: 10,
-    borderRadius: 12,
+    borderRadius: 14,
   },
   emptyStateBtnText: {
-    color: '#0F172A',
+    color: '#FFFFFF',
     fontSize: 13,
     fontWeight: '800',
   },

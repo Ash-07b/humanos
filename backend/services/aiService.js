@@ -22,7 +22,7 @@ const aiService = {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      const timeoutId = setTimeout(() => controller.abort(), 60000); // 60-second timeout for local LLM generation
 
       // 1. Try Ollama /api/generate endpoint
       const response = await fetch(`${ollamaUrl}/api/generate`, {
@@ -93,38 +93,38 @@ const aiService = {
    * Uses only user's own health records and active medications from MongoDB.
    */
   async generateHealthRecommendation({ user, healthRecords = [], medications = [], goals = [], customPrompt = '' }) {
-    const system = `You are HumanOS Vitality AI, an intelligent personal health and wellness optimization assistant powered by llama3.2.
-
-STRICT MEDICAL & SAFETY GUIDELINES:
-- Provide general lifestyle, wellness, fitness, and recovery guidance only.
-- Do NOT diagnose medical conditions or diseases.
-- Do NOT prescribe medication or advise changing prescribed medication dosages.
-- Do NOT claim to replace a qualified healthcare professional.
-- If alarming or abnormal biometric values are present, clearly recommend consulting a medical professional.
-- Keep the response concise, empowering, scientific, and limited to 2-3 clear sentences.`;
+    const system = `You are HumanOS Vitality Coach, a personal lifestyle, sleep, fitness, and wellness optimization guide.
+Provide positive, actionable, 2-3 sentence lifestyle coaching (such as hydration, sleep routine, active recovery, or mindfulness) tailored to the user's daily logged statistics.`;
 
     // Extract user biometrics from their MongoDB health records
     const heartRateRec = healthRecords.find((r) => r.type === 'Heart Rate' || r.type?.toLowerCase().includes('heart'));
     const bpRec = healthRecords.find((r) => r.type === 'Blood Pressure' || r.type?.toLowerCase().includes('blood pressure'));
+    const sleepRec = healthRecords.find((r) => r.type === 'Sleep' || r.type?.toLowerCase().includes('sleep'));
     const weightRec = healthRecords.find((r) => r.type === 'Weight' || r.type?.toLowerCase().includes('weight'));
     const tempRec = healthRecords.find((r) => r.type === 'Temperature' || r.type?.toLowerCase().includes('temp'));
     const oxygenRec = healthRecords.find((r) => r.type === 'Blood Oxygen' || r.type?.toLowerCase().includes('oxygen') || r.type?.toLowerCase().includes('spo2'));
+    const stepsRec = healthRecords.find((r) => r.type === 'Steps' || r.type?.toLowerCase().includes('step'));
 
-    const prompt = `User Telemetry & Medication Context:
-- User Name: ${user?.fullName || 'Client'}
-- Resting Heart Rate: ${heartRateRec ? `${heartRateRec.value} ${heartRateRec.unit || 'bpm'}` : 'Not recorded'}
-- Blood Pressure: ${bpRec ? `${bpRec.value} ${bpRec.unit || 'mmHg'}` : '120/80 mmHg'}
-- Weight: ${weightRec ? `${weightRec.value} ${weightRec.unit || 'kg'}` : 'Not recorded'}
-- Temperature: ${tempRec ? `${tempRec.value} ${tempRec.unit || '°C'}` : '36.6 °C'}
-- Blood Oxygen (SpO2): ${oxygenRec ? `${oxygenRec.value} ${oxygenRec.unit || '%'}` : '98%'}
-- Active Prescriptions / Medications: ${medications.length > 0 ? medications.map((m) => `${m.name} (${m.dosage}, ${m.frequency})`).join('; ') : 'None'}
+    const prompt = `User Daily Wellness & Recovery Stats:
+- Name: ${user?.fullName || 'Client'}
+- Resting Heart Rate: ${heartRateRec ? `${heartRateRec.value} ${heartRateRec.unit || 'bpm'}` : 'Normal baseline'}
+- Blood Pressure: ${bpRec ? `${bpRec.value} ${bpRec.unit || 'mmHg'}` : 'Normal baseline'}
+- Sleep Duration: ${sleepRec ? `${sleepRec.value} ${sleepRec.unit || 'hours'}` : (user?.sleepDuration ? `${user.sleepDuration}` : '7-8 hours')}
+- Daily Movement / Steps: ${stepsRec ? `${stepsRec.value} ${stepsRec.unit || 'steps'}` : 'Active'}
+- Weight: ${weightRec ? `${weightRec.value} ${weightRec.unit || 'kg'}` : 'Balanced'}
 - Active Wellness Goals: ${goals.length > 0 ? goals.map((g) => g.title).join('; ') : 'General Vitality'}
-${customPrompt ? `User Specific Focus: ${customPrompt}` : ''}
+${customPrompt ? `User Focus: ${customPrompt}` : ''}
 
-Generate a personalized, scientifically sound, 2-3 sentence wellness recovery recommendation based on the above information.`;
+Give a motivating, customized 2-3 sentence wellness routine and recovery recommendation for today based on these stats.`;
 
     const fallbackFn = () => {
       const insights = [];
+
+      if (sleepRec && parseFloat(sleepRec.value) < 7) {
+        insights.push(`Logged sleep is ${sleepRec.value} ${sleepRec.unit || 'hours'}; aim for an earlier wind-down routine tonight to support restorative recovery.`);
+      } else if (sleepRec && parseFloat(sleepRec.value) >= 8) {
+        insights.push(`Strong sleep duration logged at ${sleepRec.value} ${sleepRec.unit || 'hours'}, supporting optimal cognitive and physical recovery.`);
+      }
 
       if (heartRateRec && parseFloat(heartRateRec.value) > 90) {
         insights.push(`Your resting heart rate is slightly elevated at ${heartRateRec.value} bpm; incorporate 5 minutes of mindful box-breathing to restore autonomic balance.`);
