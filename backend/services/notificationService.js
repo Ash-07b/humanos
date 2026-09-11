@@ -29,16 +29,22 @@ const notificationService = {
   },
 
   /**
-   * Trigger notification for task reminder
+   * Trigger notification for task start reminder
    */
   async triggerTaskReminder(userId, task) {
     if (!task) return null;
+    const timeWindow = task.startTime && task.endTime
+      ? `${task.startTime} – ${task.endTime}`
+      : (task.startTime || task.dueTime || 'Now');
+    const categoryInfo = task.category ? ` • Category: ${task.category}` : '';
+
     return await this.createNotification({
       userId,
-      title: `Task Reminder: ${task.title}`,
-      message: `Priority: ${task.priority || 'Medium'} • Due: ${task.time || task.dueDate || 'Today'}`,
+      title: `Task Starting: ${task.title}`,
+      message: `Scheduled time: ${timeWindow}${categoryInfo}`,
       type: 'TASK_REMINDER',
       relatedEntityId: task._id || task.id,
+      scheduledTime: task.startTime || task.dueTime || null,
     });
   },
 
@@ -61,12 +67,25 @@ const notificationService = {
    */
   async triggerMedicationReminder(userId, medication) {
     if (!medication) return null;
+    
+    let timeDisplay = '';
+    if (Array.isArray(medication.reminderTimes) && medication.reminderTimes.filter(Boolean).length > 0) {
+      timeDisplay = medication.reminderTimes.filter(Boolean).join(', ');
+    } else if (medication.reminderTime) {
+      timeDisplay = medication.reminderTime;
+    } else {
+      timeDisplay = 'As prescribed';
+    }
+
+    const instructionsText = medication.instructions ? ` • ${medication.instructions}` : '';
+
     return await this.createNotification({
       userId,
       title: `Medication Reminder: ${medication.name}`,
-      message: `Dosage: ${medication.dosage} • Time: ${medication.reminderTime || 'Now'} (${medication.frequency})`,
+      message: `Dosage: ${medication.dosage} • Time: ${timeDisplay} (${medication.frequency || 'Daily'})${instructionsText}`,
       type: 'MEDICATION_REMINDER',
       relatedEntityId: medication._id || medication.id,
+      scheduledTime: medication.reminderTime || (Array.isArray(medication.reminderTimes) ? medication.reminderTimes[0] : null),
     });
   },
 };

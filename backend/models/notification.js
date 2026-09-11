@@ -37,11 +37,11 @@ const notificationSchema = new mongoose.Schema(
       default: false,
     },
     relatedEntityId: {
-      type: mongoose.Schema.Types.ObjectId,
+      type: mongoose.Schema.Types.Mixed,
       default: null,
     },
     scheduledTime: {
-      type: Date,
+      type: mongoose.Schema.Types.Mixed,
       default: null,
     },
   },

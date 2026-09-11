@@ -13,6 +13,7 @@ exports.createMedication = async (req, res) => {
       dosage,
       frequency,
       reminderTime,
+      reminderTimes,
       startDate,
       endDate,
       status,
@@ -33,21 +34,34 @@ exports.createMedication = async (req, res) => {
       });
     }
 
+    let parsedReminderTimes = [];
+    if (Array.isArray(reminderTimes)) {
+      parsedReminderTimes = reminderTimes.map((t) => (typeof t === 'string' ? t.trim() : '')).filter(Boolean);
+    }
+
+    let resolvedReminderTime = reminderTime ? reminderTime.trim() : '';
+    if (!resolvedReminderTime && parsedReminderTimes.length > 0) {
+      resolvedReminderTime = parsedReminderTimes.join(', ');
+    }
+
     const medication = await Medication.create({
       userId: req.user._id,
       name: name.trim(),
       dosage: dosage.trim(),
       frequency: frequency || 'Once daily',
-      reminderTime: reminderTime ? reminderTime.trim() : '08:00 AM',
+      reminderTime: resolvedReminderTime,
+      reminderTimes: parsedReminderTimes,
       startDate: startDate ? startDate.trim() : 'Today',
       endDate: endDate ? endDate.trim() : 'Ongoing',
       status: status || 'Active',
       instructions: instructions ? instructions.trim() : 'Take as prescribed',
     });
 
-    if (medication.reminderTime) {
+    try {
       const notificationService = require('../services/notificationService');
       await notificationService.triggerMedicationReminder(req.user._id, medication);
+    } catch (notifErr) {
+      console.error('Error triggering medication notification:', notifErr.message);
     }
 
     return res.status(201).json({
@@ -162,6 +176,7 @@ exports.updateMedication = async (req, res) => {
       dosage,
       frequency,
       reminderTime,
+      reminderTimes,
       startDate,
       endDate,
       status,
@@ -171,6 +186,12 @@ exports.updateMedication = async (req, res) => {
     if (name !== undefined) medication.name = name.trim();
     if (dosage !== undefined) medication.dosage = dosage.trim();
     if (frequency !== undefined) medication.frequency = frequency;
+    if (reminderTimes !== undefined && Array.isArray(reminderTimes)) {
+      medication.reminderTimes = reminderTimes.map((t) => (typeof t === 'string' ? t.trim() : '')).filter(Boolean);
+      if (reminderTime === undefined) {
+        medication.reminderTime = medication.reminderTimes.join(', ');
+      }
+    }
     if (reminderTime !== undefined) medication.reminderTime = reminderTime.trim();
     if (startDate !== undefined) medication.startDate = startDate.trim();
     if (endDate !== undefined) medication.endDate = endDate.trim();
@@ -178,6 +199,13 @@ exports.updateMedication = async (req, res) => {
     if (instructions !== undefined) medication.instructions = instructions.trim();
 
     const updatedMedication = await medication.save();
+
+    try {
+      const notificationService = require('../services/notificationService');
+      await notificationService.triggerMedicationReminder(req.user._id, updatedMedication);
+    } catch (notifErr) {
+      console.error('Error triggering medication notification on update:', notifErr.message);
+    }
 
     return res.status(200).json({
       success: true,

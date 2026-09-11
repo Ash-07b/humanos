@@ -8,7 +8,7 @@ const Task = require('../models/Task');
  */
 exports.createTask = async (req, res) => {
   try {
-    const { title, description, priority, category, dueDate, dueTime, reminder, status, done } = req.body;
+    const { title, description, priority, category, startTime, endTime, dueDate, dueTime, reminder, status, done } = req.body;
 
     // Validation: Title is required
     if (!title || typeof title !== 'string' || !title.trim()) {
@@ -37,9 +37,11 @@ exports.createTask = async (req, res) => {
       category: category ? category.trim() : 'Work',
       priority: priority || 'MEDIUM',
       status: initialStatus,
+      startTime: startTime ? startTime.trim() : '',
+      endTime: endTime ? endTime.trim() : '',
       dueDate: dueDate || 'Today',
-      dueTime: dueTime || '10:00 AM',
-      reminder: reminder ?? false,
+      dueTime: dueTime || startTime || '',
+      reminder: reminder ?? true,
       completedAt,
     });
 
@@ -158,7 +160,7 @@ exports.getTaskById = async (req, res) => {
 exports.updateTask = async (req, res) => {
   try {
     const { id } = req.params;
-    const { title, description, priority, category, dueDate, dueTime, reminder, status, done } = req.body;
+    const { title, description, priority, category, startTime, endTime, dueDate, dueTime, reminder, status, done } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({
@@ -190,6 +192,8 @@ exports.updateTask = async (req, res) => {
     if (description !== undefined) task.description = description.trim();
     if (category !== undefined) task.category = category.trim();
     if (priority !== undefined) task.priority = priority;
+    if (startTime !== undefined) task.startTime = startTime;
+    if (endTime !== undefined) task.endTime = endTime;
     if (dueDate !== undefined) task.dueDate = dueDate;
     if (dueTime !== undefined) task.dueTime = dueTime;
     if (reminder !== undefined) task.reminder = reminder;

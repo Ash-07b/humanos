@@ -39,6 +39,14 @@ const taskSchema = new mongoose.Schema(
       },
       default: 'PENDING',
     },
+    startTime: {
+      type: String,
+      default: '',
+    },
+    endTime: {
+      type: String,
+      default: '',
+    },
     dueDate: {
       type: String,
       default: 'Today',
@@ -49,7 +57,7 @@ const taskSchema = new mongoose.Schema(
     },
     reminder: {
       type: Boolean,
-      default: false,
+      default: true,
     },
     completedAt: {
       type: String,

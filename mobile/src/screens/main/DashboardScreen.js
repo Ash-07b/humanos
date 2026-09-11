@@ -368,10 +368,18 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
           </View>
 
           {/* Executive AI Briefing Card */}
-          <View style={[styles.aiBriefingCard, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.15)' : '#F5F3FF', borderColor: theme.colors.border }]}>
+          <View
+            style={[
+              styles.aiBriefingCard,
+              {
+                backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.12)' : '#F5F3FF',
+                borderColor: isDarkMode ? 'rgba(99, 102, 241, 0.25)' : 'rgba(99, 102, 241, 0.18)',
+              },
+            ]}
+          >
             <View style={styles.aiBriefingHeader}>
               <View style={styles.aiBriefingBadge}>
-                <Sparkles size={13} color="#6366F1" strokeWidth={2.2} />
+                <Sparkles size={12} color="#6366F1" strokeWidth={2.2} />
                 <Text style={styles.aiBriefingBadgeText}>AI EXECUTIVE BRIEFING</Text>
               </View>
               <Pressable
@@ -1024,50 +1032,53 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   aiBriefingCard: {
-    borderRadius: 20,
-    padding: 16,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderWidth: 1,
-    marginBottom: 16,
+    marginBottom: 14,
     shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   aiBriefingHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   aiBriefingBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    backgroundColor: 'rgba(99, 102, 241, 0.15)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    gap: 4,
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
   },
   aiBriefingBadgeText: {
     color: '#6366F1',
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
-    letterSpacing: 0.8,
+    letterSpacing: 0.7,
   },
   aiBriefingBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   aiBriefingBtnText: {
-    fontSize: 11.5,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '700',
   },
   aiBriefingBody: {
-    fontSize: 13,
-    lineHeight: 18.5,
+    fontSize: 12.5,
+    lineHeight: 18,
     fontStyle: 'italic',
+    width: '100%',
+    flexShrink: 1,
   },
   sectionCard: {
     backgroundColor: '#FFFFFF',

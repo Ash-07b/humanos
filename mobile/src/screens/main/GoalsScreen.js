@@ -33,6 +33,9 @@ import {
   Flag,
   Archive,
   Trash2,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -80,9 +83,25 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
   const [newGoalTitle, setNewGoalTitle] = useState('');
   const [newGoalDesc, setNewGoalDesc] = useState('');
   const [newGoalCategory, setNewGoalCategory] = useState('Career');
-  const [newGoalTargetDate, setNewGoalTargetDate] = useState('Dec 31');
+  const [newGoalTargetDate, setNewGoalTargetDate] = useState('');
   const [newGoalPriority, setNewGoalPriority] = useState('Medium');
+  const [newGoalObjectives, setNewGoalObjectives] = useState([]);
+  const [newObjectiveInput, setNewObjectiveInput] = useState('');
   const [formError, setFormError] = useState('');
+
+  // Calendar Modal State
+  const [calendarModalVisible, setCalendarModalVisible] = useState(false);
+  const [calendarViewDate, setCalendarViewDate] = useState(new Date());
+
+  const handleAddObjectiveToForm = () => {
+    if (!newObjectiveInput.trim()) return;
+    setNewGoalObjectives((prev) => [...prev, newObjectiveInput.trim()]);
+    setNewObjectiveInput('');
+  };
+
+  const handleRemoveObjectiveFromForm = (idx) => {
+    setNewGoalObjectives((prev) => prev.filter((_, i) => i !== idx));
+  };
 
   const [goals, setGoals] = useState(user?.goals || []);
   const [completedGoals, setCompletedGoals] = useState(user?.completedGoals || []);
@@ -235,15 +254,20 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
       return;
     }
 
+    const customMilestones = newGoalObjectives
+      .map((o) => (typeof o === 'string' ? o.trim() : ''))
+      .filter(Boolean)
+      .map((text, idx) => ({ id: `m_${Date.now()}_${idx}`, text, completed: false }));
+
     const payload = {
       title: newGoalTitle.trim(),
       description: newGoalDesc.trim() || 'No description provided.',
       category: newGoalCategory,
       progress: 0,
-      targetDate: newGoalTargetDate.trim() || 'Dec 31',
+      targetDate: newGoalTargetDate.trim() || 'Ongoing',
       priority: newGoalPriority,
       status: 'Active',
-      milestones: [
+      milestones: customMilestones.length > 0 ? customMilestones : [
         { text: 'Initial scoping & plan', completed: false },
         { text: 'Execution phase 1', completed: false },
       ],
@@ -284,79 +308,105 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
 
     setNewGoalTitle('');
     setNewGoalDesc('');
+    setNewGoalTargetDate('');
+    setNewGoalObjectives([]);
+    setNewObjectiveInput('');
     setFormError('');
     setAddModalVisible(false);
   };
 
-  // Update Goal Progress Handler
+  // Update Goal Progress Handler (Supports Reopening Completed Goals if marked by mistake)
   const handleUpdateProgress = async (goalId, newProgress) => {
     const numericProgress = Math.min(100, Math.max(0, parseInt(newProgress, 10) || 0));
 
-    // Optimistic UI updates
+    // Check if the goal is currently in completedGoals or active goals
+    const isCurrentlyCompleted = completedGoals.some((g) => (g.id === goalId || g._id === goalId));
+    const isCurrentlyActive = goals.some((g) => (g.id === goalId || g._id === goalId));
+
     if (numericProgress >= 100) {
-      const target = goals.find((g) => (g.id === goalId || g._id === goalId));
-      if (target) {
-        setGoals((prev) => prev.filter((g) => (g.id !== goalId && g._id !== goalId)));
-        setCompletedGoals((prev) => [
-          {
+      if (isCurrentlyActive) {
+        const target = goals.find((g) => (g.id === goalId || g._id === goalId));
+        if (target) {
+          setGoals((prev) => prev.filter((g) => (g.id !== goalId && g._id !== goalId)));
+          const completedItem = {
             ...target,
             id: target.id || target._id,
             title: target.title,
             category: target.category,
-            completedDate: 'Today',
+            completedDate: target.completedDate || 'Today',
             progress: 100,
             status: 'Completed',
-          },
-          ...prev,
-        ]);
+          };
+          setCompletedGoals((prev) => [completedItem, ...prev]);
+          if (selectedGoal && (selectedGoal.id === goalId || selectedGoal._id === goalId)) {
+            setSelectedGoal(completedItem);
+          }
+          setEditProgressModalVisible(false);
+          showToast(`🎉 Goal "${target.title}" Completed!`);
+        }
+      } else if (isCurrentlyCompleted) {
+        setCompletedGoals((prev) =>
+          prev.map((g) => (g.id === goalId || g._id === goalId ? { ...g, progress: 100, status: 'Completed' } : g))
+        );
+        setEditProgressModalVisible(false);
+        showToast(`Goal marked as 100% Completed`);
+      }
+    } else {
+      // numericProgress < 100
+      if (isCurrentlyCompleted) {
+        // Was completed by mistake - reopen and move back to active goals!
+        const target = completedGoals.find((g) => (g.id === goalId || g._id === goalId));
+        if (target) {
+          setCompletedGoals((prev) => prev.filter((g) => (g.id !== goalId && g._id !== goalId)));
+          const reopenedItem = {
+            ...target,
+            id: target.id || target._id,
+            progress: numericProgress,
+            status: 'Active',
+            progressHistory: [
+              { date: 'Today', progress: numericProgress, note: `Reopened at ${numericProgress}%` },
+              ...(target.progressHistory || []),
+            ],
+          };
+          setGoals((prev) => [reopenedItem, ...prev]);
+          if (selectedGoal && (selectedGoal.id === goalId || selectedGoal._id === goalId)) {
+            setSelectedGoal(reopenedItem);
+          }
+          setEditProgressModalVisible(false);
+          showToast(`Reopened "${target.title}" at ${numericProgress}%`);
+        }
+      } else {
+        // Active goal progress update
+        setGoals((prev) =>
+          prev.map((g) => {
+            if (g.id === goalId || g._id === goalId) {
+              const updatedHistory = [
+                { date: 'Today', progress: numericProgress, note: `Updated to ${numericProgress}%` },
+                ...(g.progressHistory || []),
+              ];
+              return {
+                ...g,
+                progress: numericProgress,
+                progressHistory: updatedHistory,
+              };
+            }
+            return g;
+          })
+        );
         if (selectedGoal && (selectedGoal.id === goalId || selectedGoal._id === goalId)) {
-          setDetailsModalVisible(false);
+          setSelectedGoal((prev) => ({
+            ...prev,
+            progress: numericProgress,
+            progressHistory: [
+              { date: 'Today', progress: numericProgress, note: `Updated to ${numericProgress}%` },
+              ...(prev.progressHistory || []),
+            ],
+          }));
         }
         setEditProgressModalVisible(false);
-        showToast(`🎉 Goal "${target.title}" Completed!`);
-
-        try {
-          const token = await getToken();
-          if (token) {
-            await updateGoalProgress(goalId, 100, 'Goal completed', token);
-          }
-        } catch (e) {
-          console.log('Error updating goal progress on server:', e);
-        }
-        return;
+        showToast(`Progress updated to ${numericProgress}%`);
       }
     }
-
-    setGoals((prev) =>
-      prev.map((g) => {
-        if (g.id === goalId || g._id === goalId) {
-          const updatedHistory = [
-            { date: 'Today', progress: numericProgress, note: `Updated to ${numericProgress}%` },
-            ...(g.progressHistory || []),
-          ];
-          return {
-            ...g,
-            progress: numericProgress,
-            progressHistory: updatedHistory,
-          };
-        }
-        return g;
-      })
-    );
-
-    if (selectedGoal && (selectedGoal.id === goalId || selectedGoal._id === goalId)) {
-      setSelectedGoal((prev) => ({
-        ...prev,
-        progress: numericProgress,
-        progressHistory: [
-          { date: 'Today', progress: numericProgress, note: `Updated to ${numericProgress}%` },
-          ...(prev.progressHistory || []),
-        ],
-      }));
-    }
-
-    setEditProgressModalVisible(false);
-    showToast(`Progress updated to ${numericProgress}%`);
 
     try {
       const token = await getToken();
@@ -364,7 +414,7 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
         await updateGoalProgress(goalId, numericProgress, `Updated to ${numericProgress}%`, token);
       }
     } catch (e) {
-      console.log('Error updating goal progress:', e);
+      console.log('Error updating goal progress on server:', e);
     }
   };
 
@@ -862,11 +912,19 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
           </View>
 
           {/* ==================== 11. GOAL INSIGHTS (AI CARD) ==================== */}
-          <View style={[styles.insightCard, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.15)' : '#F5F3FF', borderColor: theme.colors.border }]}>
+          <View
+            style={[
+              styles.insightCard,
+              {
+                backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.12)' : '#F5F3FF',
+                borderColor: isDarkMode ? 'rgba(99, 102, 241, 0.25)' : 'rgba(99, 102, 241, 0.18)',
+              },
+            ]}
+          >
             <View style={styles.insightHeaderRow}>
               <View style={styles.insightBadge}>
-                <Sparkles size={13} color="#6366F1" strokeWidth={2.2} />
-                <Text style={styles.insightBadgeText}>INTELLIGENT REVIEW</Text>
+                <Sparkles size={12} color="#6366F1" strokeWidth={2.2} />
+                <Text style={styles.insightBadgeText}>AI GOALS BRIEFING</Text>
               </View>
               <Pressable
                 onPress={handleGenerateAiReview}
@@ -878,12 +936,11 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                 ]}
               >
                 <Text style={[styles.insightRefreshText, { color: isDarkMode ? '#A5B4FC' : '#4F46E5' }]}>
-                  {aiReviewLoading ? 'Analyzing...' : '✦ AI Review'}
+                  {aiReviewLoading ? 'Analyzing...' : '✦ Refresh'}
                 </Text>
               </Pressable>
             </View>
-            <Text style={[styles.insightTitle, { color: theme.colors.textPrimary }]}>Executive Strategy</Text>
-            <Text style={[styles.insightBody, { color: theme.colors.textSecondary }]}>
+            <Text style={[styles.insightBody, { color: theme.colors.textPrimary }]}>
               "{aiReviewText}"
             </Text>
           </View>
@@ -905,17 +962,46 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
 
               <View style={styles.completedList}>
                 {completedGoals.map((cg) => (
-                  <View key={cg.id} style={[styles.completedGoalCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                  <Pressable
+                    key={cg.id || cg._id}
+                    onPress={() => {
+                      setSelectedGoal(cg);
+                      setDetailsModalVisible(true);
+                    }}
+                    style={({ pressed }) => [
+                      styles.completedGoalCard,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
                     <View style={[styles.completedCheckCircle, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF' }]}>
                       <Check size={11} color={isDarkMode ? '#818CF8' : '#4F46E5'} strokeWidth={3} />
                     </View>
                     <View style={styles.completedGoalBody}>
                       <Text style={[styles.completedGoalTitle, { color: theme.colors.textPrimary }]}>{cg.title}</Text>
                       <Text style={[styles.completedGoalSub, { color: theme.colors.textSecondary }]}>
-                        100% • Completed {cg.completedDate} • {cg.category}
+                        100% • Completed {cg.completedDate || 'Recently'} • {cg.category}
                       </Text>
                     </View>
-                  </View>
+                    <Pressable
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        setTargetOptionGoal(cg);
+                        setNewProgressValue(100);
+                        setEditProgressModalVisible(true);
+                      }}
+                      style={({ pressed }) => [
+                        styles.reopenGoalBtn,
+                        { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <RotateCcw size={11} color={isDarkMode ? '#818CF8' : '#4F46E5'} strokeWidth={2.2} />
+                      <Text style={[styles.reopenGoalText, { color: isDarkMode ? '#818CF8' : '#4F46E5' }]}>Edit %</Text>
+                    </Pressable>
+                  </Pressable>
                 ))}
               </View>
             </View>
@@ -1182,9 +1268,12 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
               {/* Description */}
               <View style={styles.formGroup}>
                 <Text style={[styles.formLabel, { color: theme.colors.textPrimary }]}>Description</Text>
+                <Text style={[styles.formHelperText, { color: theme.colors.textMuted }]}>
+                  Describe what this goal is about and what you want to achieve.
+                </Text>
                 <TextInput
                   style={[styles.formInput, styles.formTextArea, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
-                  placeholder="What does success look like?"
+                  placeholder="Explain what you want to accomplish, why it matters, and key details..."
                   placeholderTextColor="#94A3B8"
                   value={newGoalDesc}
                   onChangeText={setNewGoalDesc}
@@ -1230,16 +1319,141 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                 </View>
               </View>
 
-              {/* Target Date */}
+              {/* Target Date with Calendar Picker */}
               <View style={styles.formGroup}>
                 <Text style={[styles.formLabel, { color: theme.colors.textPrimary }]}>Target Date</Text>
-                <TextInput
-                  style={[styles.formInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
-                  placeholder="e.g. December 31 or Q4 2026"
-                  placeholderTextColor="#94A3B8"
-                  value={newGoalTargetDate}
-                  onChangeText={setNewGoalTargetDate}
-                />
+                <View style={styles.inputWithIconRow}>
+                  <TextInput
+                    style={[
+                      styles.formInput,
+                      styles.inputWithIcon,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                      isWeb && styles.webOutlineNone,
+                    ]}
+                    placeholder="Select or enter target date (e.g. 2026-12-31)"
+                    placeholderTextColor="#94A3B8"
+                    value={newGoalTargetDate}
+                    onChangeText={setNewGoalTargetDate}
+                  />
+                  <Pressable
+                    onPress={() => {
+                      setCalendarViewDate(new Date());
+                      setCalendarModalVisible(true);
+                    }}
+                    style={({ pressed }) => [
+                      styles.calendarTriggerIconBtn,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <Calendar size={17} color="#4F46E5" strokeWidth={2.2} />
+                  </Pressable>
+                </View>
+
+                {/* Quick Target Date Presets */}
+                <View style={styles.miniPresetRow}>
+                  <Pressable
+                    onPress={() => {
+                      const inMonth = new Date();
+                      inMonth.setDate(inMonth.getDate() + 30);
+                      setNewGoalTargetDate(inMonth.toISOString().split('T')[0]);
+                    }}
+                    style={[styles.miniPresetBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                  >
+                    <Text style={[styles.miniPresetText, { color: theme.colors.textSecondary }]}>+1 Month</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      const inQuarter = new Date();
+                      inQuarter.setDate(inQuarter.getDate() + 90);
+                      setNewGoalTargetDate(inQuarter.toISOString().split('T')[0]);
+                    }}
+                    style={[styles.miniPresetBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                  >
+                    <Text style={[styles.miniPresetText, { color: theme.colors.textSecondary }]}>+3 Months</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      const endOfYear = new Date(new Date().getFullYear(), 11, 31);
+                      setNewGoalTargetDate(endOfYear.toISOString().split('T')[0]);
+                    }}
+                    style={[styles.miniPresetBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                  >
+                    <Text style={[styles.miniPresetText, { color: theme.colors.textSecondary }]}>End of Year</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Objectives & Key Milestones to achieve the goal */}
+              <View style={styles.formGroup}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.formLabel, { color: theme.colors.textPrimary, marginBottom: 0 }]}>
+                    Objectives & Key Steps {newGoalObjectives.length > 0 ? `(${newGoalObjectives.length})` : ''}
+                  </Text>
+                </View>
+                <Text style={[styles.formHelperText, { color: theme.colors.textMuted }]}>
+                  Add actionable milestones to track your progress toward this goal.
+                </Text>
+
+                {/* Add objective input row */}
+                <View style={styles.addObjectiveInputRow}>
+                  <TextInput
+                    style={[
+                      styles.formInput,
+                      styles.inputWithIcon,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                      isWeb && styles.webOutlineNone,
+                    ]}
+                    placeholder="e.g. Complete chapter 1 & practice exercises"
+                    placeholderTextColor="#94A3B8"
+                    value={newObjectiveInput}
+                    onChangeText={setNewObjectiveInput}
+                    onSubmitEditing={handleAddObjectiveToForm}
+                    returnKeyType="done"
+                  />
+                  <Pressable
+                    onPress={handleAddObjectiveToForm}
+                    style={({ pressed }) => [
+                      styles.addObjectiveBtn,
+                      { backgroundColor: '#4F46E5' },
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <Plus size={15} color="#FFFFFF" strokeWidth={2.5} />
+                    <Text style={styles.addObjectiveBtnText}>Add</Text>
+                  </Pressable>
+                </View>
+
+                {/* List of added objectives */}
+                {newGoalObjectives.length > 0 && (
+                  <View style={styles.addedObjectivesList}>
+                    {newGoalObjectives.map((objText, oIdx) => (
+                      <View
+                        key={`obj-${oIdx}`}
+                        style={[
+                          styles.addedObjectiveItem,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        ]}
+                      >
+                        <View style={styles.objectiveIndexCircle}>
+                          <Text style={styles.objectiveIndexText}>{oIdx + 1}</Text>
+                        </View>
+                        <Text style={[styles.addedObjectiveText, { color: theme.colors.textPrimary }]}>
+                          {objText}
+                        </Text>
+                        <Pressable
+                          onPress={() => handleRemoveObjectiveFromForm(oIdx)}
+                          style={styles.removeObjectiveBtn}
+                          hitSlop={6}
+                        >
+                          <X size={14} color="#94A3B8" strokeWidth={2.2} />
+                        </Pressable>
+                      </View>
+                    ))}
+                  </View>
+                )}
               </View>
 
               {/* Priority */}
@@ -1290,6 +1504,191 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                 <Text style={[styles.modalSubmitLimeText, { color: '#FFFFFF', fontWeight: '800' }]}>Create Goal</Text>
               </Pressable>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ==================== 6B. CALENDAR PICKER MODAL ==================== */}
+      <Modal
+        visible={calendarModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCalendarModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.calendarModalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            {/* Calendar Header */}
+            <View style={styles.calendarHeaderRow}>
+              <View>
+                <Text style={styles.modalKicker}>TARGET DEADLINE</Text>
+                <Text style={[styles.calendarModalTitle, { color: theme.colors.textPrimary }]}>
+                  Select Completion Date
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setCalendarModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
+              </Pressable>
+            </View>
+
+            {/* Month & Year Navigation */}
+            {(() => {
+              const currentYear = calendarViewDate.getFullYear();
+              const currentMonth = calendarViewDate.getMonth();
+              const monthNames = [
+                'January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'
+              ];
+              const monthName = monthNames[currentMonth];
+
+              const handlePrevMonth = () => {
+                setCalendarViewDate(new Date(currentYear, currentMonth - 1, 1));
+              };
+
+              const handleNextMonth = () => {
+                setCalendarViewDate(new Date(currentYear, currentMonth + 1, 1));
+              };
+
+              const days = [];
+              const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay();
+              const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+              const prevMonthDays = new Date(currentYear, currentMonth, 0).getDate();
+
+              for (let i = firstDayIndex - 1; i >= 0; i--) {
+                const d = new Date(currentYear, currentMonth - 1, prevMonthDays - i);
+                days.push({ dayNum: prevMonthDays - i, isCurrentMonth: false, date: d });
+              }
+              for (let i = 1; i <= daysInMonth; i++) {
+                const d = new Date(currentYear, currentMonth, i);
+                days.push({ dayNum: i, isCurrentMonth: true, date: d });
+              }
+              const remaining = (7 - (days.length % 7)) % 7;
+              for (let i = 1; i <= remaining; i++) {
+                const d = new Date(currentYear, currentMonth + 1, i);
+                days.push({ dayNum: i, isCurrentMonth: false, date: d });
+              }
+
+              const todayStr = new Date().toISOString().split('T')[0];
+
+              return (
+                <View style={styles.calendarBody}>
+                  <View style={styles.monthNavRow}>
+                    <Pressable
+                      onPress={handlePrevMonth}
+                      style={({ pressed }) => [
+                        styles.monthNavBtn,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <ChevronLeft size={18} color={theme.colors.textPrimary} strokeWidth={2.2} />
+                    </Pressable>
+
+                    <Text style={[styles.monthNavTitle, { color: theme.colors.textPrimary }]}>
+                      {monthName} {currentYear}
+                    </Text>
+
+                    <Pressable
+                      onPress={handleNextMonth}
+                      style={({ pressed }) => [
+                        styles.monthNavBtn,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <ChevronRight size={18} color={theme.colors.textPrimary} strokeWidth={2.2} />
+                    </Pressable>
+                  </View>
+
+                  {/* Day Names Row */}
+                  <View style={styles.weekDaysHeaderRow}>
+                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((wd) => (
+                      <Text key={wd} style={[styles.weekDayHeaderCell, { color: theme.colors.textMuted }]}>
+                        {wd}
+                      </Text>
+                    ))}
+                  </View>
+
+                  {/* Days Grid */}
+                  <View style={styles.daysGrid}>
+                    {days.map((item, dIdx) => {
+                      const dateIso = item.date.toISOString().split('T')[0];
+                      const isToday = dateIso === todayStr;
+                      const isSelected = newGoalTargetDate === dateIso;
+
+                      return (
+                        <Pressable
+                          key={`cal-${dIdx}`}
+                          onPress={() => {
+                            setNewGoalTargetDate(dateIso);
+                            setCalendarModalVisible(false);
+                          }}
+                          style={({ pressed }) => [
+                            styles.dayCell,
+                            isSelected && styles.dayCellSelected,
+                            isToday && !isSelected && styles.dayCellToday,
+                            isWeb && styles.webPointer,
+                            pressed && styles.pressedOpacity,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dayCellText,
+                              { color: item.isCurrentMonth ? theme.colors.textPrimary : theme.colors.textMuted },
+                              !item.isCurrentMonth && { opacity: 0.4 },
+                              isSelected && styles.dayCellTextSelected,
+                              isToday && !isSelected && styles.dayCellTextToday,
+                            ]}
+                          >
+                            {item.dayNum}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {/* Quick Preset Action Chips */}
+                  <View style={styles.calendarQuickActions}>
+                    <Pressable
+                      onPress={() => {
+                        const inMonth = new Date();
+                        inMonth.setDate(inMonth.getDate() + 30);
+                        setNewGoalTargetDate(inMonth.toISOString().split('T')[0]);
+                        setCalendarModalVisible(false);
+                      }}
+                      style={[styles.calQuickChip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <Text style={[styles.calQuickChipText, { color: theme.colors.textPrimary }]}>In 1 Month</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        const inQuarter = new Date();
+                        inQuarter.setDate(inQuarter.getDate() + 90);
+                        setNewGoalTargetDate(inQuarter.toISOString().split('T')[0]);
+                        setCalendarModalVisible(false);
+                      }}
+                      style={[styles.calQuickChip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <Text style={[styles.calQuickChipText, { color: theme.colors.textPrimary }]}>In 3 Months</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        const endOfYear = new Date(new Date().getFullYear(), 11, 31);
+                        setNewGoalTargetDate(endOfYear.toISOString().split('T')[0]);
+                        setCalendarModalVisible(false);
+                      }}
+                      style={[styles.calQuickChip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <Text style={[styles.calQuickChipText, { color: '#4F46E5' }]}>End of Year</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })()}
           </View>
         </View>
       </Modal>
@@ -2119,64 +2518,53 @@ const styles = StyleSheet.create({
 
   /* 11. GOAL INSIGHTS (AI CARD) */
   insightCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 22,
-    padding: 18,
-    marginBottom: 16,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.35)',
+    marginBottom: 14,
     shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 1,
   },
   insightHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   insightBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(99, 102, 241, 0.25)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.4)',
     gap: 4,
-  },
-  insightSparkle: {
-    fontSize: 11,
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    borderRadius: 6,
   },
   insightBadgeText: {
-    color: '#C7D2FE',
+    color: '#6366F1',
     fontSize: 9.5,
     fontWeight: '800',
-    letterSpacing: 0.8,
-  },
-  insightTitle: {
-    color: '#F8FAFC',
-    fontSize: 18,
-    fontWeight: '800',
-    letterSpacing: -0.4,
-    marginBottom: 6,
+    letterSpacing: 0.7,
   },
   insightRefreshBtn: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
   insightRefreshText: {
-    fontSize: 11.5,
-    fontWeight: '800',
+    fontSize: 11,
+    fontWeight: '700',
   },
   insightBody: {
-    fontSize: 13,
-    lineHeight: 19,
+    fontSize: 12.5,
+    lineHeight: 18,
     fontStyle: 'italic',
+    width: '100%',
+    flexShrink: 1,
   },
 
   /* 8. COMPLETED GOALS */
@@ -2231,6 +2619,23 @@ const styles = StyleSheet.create({
     color: '#64748B',
     fontSize: 11,
     marginTop: 2,
+  },
+  reopenGoalBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+    marginLeft: 6,
+  },
+  reopenGoalText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#4F46E5',
   },
 
   /* Floating Add Goal Button */
@@ -2526,6 +2931,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginBottom: 6,
   },
+  formHelperText: {
+    fontSize: 11.5,
+    color: '#64748B',
+    marginBottom: 6,
+  },
   formInput: {
     backgroundColor: '#F8FAFC',
     borderColor: '#E2E8F0',
@@ -2539,6 +2949,97 @@ const styles = StyleSheet.create({
   formTextArea: {
     minHeight: 70,
     textAlignVertical: 'top',
+  },
+  inputWithIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inputWithIcon: {
+    flex: 1,
+  },
+  calendarTriggerIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+  },
+  miniPresetRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 8,
+  },
+  miniPresetBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  miniPresetText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  addObjectiveInputRow: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+  },
+  addObjectiveBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#4F46E5',
+  },
+  addObjectiveBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '800',
+  },
+  addedObjectivesList: {
+    marginTop: 8,
+    gap: 6,
+  },
+  addedObjectiveItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 8,
+  },
+  objectiveIndexCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  objectiveIndexText: {
+    fontSize: 10.5,
+    fontWeight: '800',
+    color: '#4F46E5',
+  },
+  addedObjectiveText: {
+    flex: 1,
+    fontSize: 12.5,
+    color: '#0F172A',
+  },
+  removeObjectiveBtn: {
+    padding: 2,
   },
   formErrorBanner: {
     backgroundColor: '#FEE2E2',
@@ -2646,6 +3147,127 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '800',
+  },
+
+  /* CALENDAR MODAL */
+  calendarModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+    marginHorizontal: 20,
+    marginBottom: 'auto',
+    marginTop: 'auto',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+    maxWidth: 380,
+    alignSelf: 'center',
+    width: '92%',
+  },
+  calendarHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  calendarModalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#0F172A',
+    marginTop: 2,
+  },
+  calendarBody: {
+    marginTop: 4,
+  },
+  monthNavRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  monthNavBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthNavTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  weekDaysHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 8,
+  },
+  weekDayHeaderCell: {
+    width: 34,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  daysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+  },
+  dayCell: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 2,
+  },
+  dayCellSelected: {
+    backgroundColor: '#4F46E5',
+  },
+  dayCellToday: {
+    borderWidth: 1.5,
+    borderColor: '#4F46E5',
+  },
+  dayCellText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  dayCellTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  dayCellTextToday: {
+    color: '#4F46E5',
+    fontWeight: '800',
+  },
+  calendarQuickActions: {
+    flexDirection: 'row',
+    gap: 6,
+    justifyContent: 'center',
+    marginTop: 14,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  calQuickChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  calQuickChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#475569',
   },
 
   /* EDIT PROGRESS CARD */

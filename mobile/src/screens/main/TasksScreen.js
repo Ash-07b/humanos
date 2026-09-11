@@ -26,9 +26,8 @@ import {
   MoreVertical,
   Plus,
   Pencil,
-  Zap,
   Trash2,
-  Calendar,
+  RotateCcw,
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -62,9 +61,8 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   // Pull-to-refresh
   const [refreshing, setRefreshing] = useState(false);
 
-  // Filters: 'All' | 'Today' | 'Upcoming' | 'Completed'
-  const [activeFilter, setActiveFilter] = useState('Today');
-  const [priorityFilter, setPriorityFilter] = useState(null); // null | 'High' | 'Medium' | 'Low'
+  // Filters: 'All' | 'Active' | 'Completed' | 'Work' | 'Personal' | 'Health'
+  const [activeFilter, setActiveFilter] = useState('All');
 
   // Modals
   const [createModalVisible, setCreateModalVisible] = useState(false);
@@ -73,6 +71,14 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   const [notificationsModalVisible, setNotificationsModalVisible] = useState(false);
   const [selectedTask, setSelectedTask] = useState(null);
 
+  // Interactive Clock / Time Picker Modal State
+  const [timePickerModalVisible, setTimePickerModalVisible] = useState(false);
+  const [timePickerTarget, setTimePickerTarget] = useState('start'); // 'start' | 'end'
+  const [pickerHour, setPickerHour] = useState(9);
+  const [pickerMinute, setPickerMinute] = useState(0);
+  const [pickerPeriod, setPickerPeriod] = useState('AM'); // 'AM' | 'PM'
+  const [pickerMode, setPickerMode] = useState('hour'); // 'hour' | 'minute'
+
   // Notifications State
   const [notifications, setNotifications] = useState([]);
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
@@ -80,19 +86,17 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   // Notice feedback tooltip
   const [noticeMessage, setNoticeMessage] = useState('');
 
-  // Form State for Task Creation & Editing
+  // Form State for Task Creation & Editing (Start Time & End Time with placeholders, NO Due Date, NO Priority)
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
-  const [taskDueDate, setTaskDueDate] = useState('Today');
-  const [taskDueTime, setTaskDueTime] = useState('10:00 AM');
-  const [taskPriority, setTaskPriority] = useState('Medium');
+  const [taskStartTime, setTaskStartTime] = useState('');
+  const [taskEndTime, setTaskEndTime] = useState('');
   const [taskCategory, setTaskCategory] = useState('Work');
   const [taskReminder, setTaskReminder] = useState(true);
   const [titleError, setTitleError] = useState('');
 
   // Tasks state (dynamically bound to backend API and database user)
   const [tasks, setTasks] = useState(user?.tasks || []);
-  const [loadingTasks, setLoadingTasks] = useState(false);
 
   // Fetch tasks from backend for authenticated user
   const loadTasks = async () => {
@@ -189,6 +193,42 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     }
   };
 
+  // Helper to parse time string (e.g. "09:30 AM") into { hour, minute, period }
+  const parseTimeString = (str) => {
+    if (!str || typeof str !== 'string' || !str.trim()) {
+      return { hour: 9, minute: 0, period: 'AM' };
+    }
+    const parts = str.trim().split(' ');
+    const period = parts[1]?.toUpperCase() === 'PM' ? 'PM' : 'AM';
+    const timeParts = parts[0]?.split(':') || ['9', '0'];
+    const hr = parseInt(timeParts[0], 10) || 9;
+    const min = parseInt(timeParts[1], 10) || 0;
+    return { hour: hr, minute: min, period };
+  };
+
+  // Open Clock / Time Picker Modal
+  const handleOpenTimePicker = (target) => {
+    setTimePickerTarget(target);
+    const timeVal = target === 'start' ? taskStartTime : taskEndTime;
+    const parsed = parseTimeString(timeVal);
+    setPickerHour(parsed.hour);
+    setPickerMinute(parsed.minute);
+    setPickerPeriod(parsed.period);
+    setPickerMode('hour');
+    setTimePickerModalVisible(true);
+  };
+
+  // Apply selected time from Clock Modal
+  const handleApplyTimePicker = () => {
+    const formatted = `${String(pickerHour).padStart(2, '0')}:${String(pickerMinute).padStart(2, '0')} ${pickerPeriod}`;
+    if (timePickerTarget === 'start') {
+      setTaskStartTime(formatted);
+    } else {
+      setTaskEndTime(formatted);
+    }
+    setTimePickerModalVisible(false);
+  };
+
   // AI Productivity Briefing State
   const [aiTaskBriefing, setAiTaskBriefing] = useState('');
   const [aiTaskLoading, setAiTaskLoading] = useState(false);
@@ -199,20 +239,19 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
       const token = await getToken();
       const payload = {
         totalTasks: tasks.length,
-        completedTasks: tasks.filter((t) => t.status === 'COMPLETED').length,
-        pendingTasks: tasks.filter((t) => t.status !== 'COMPLETED').map((t) => t.title),
-        highPriorityTasks: tasks.filter((t) => (t.priority === 'HIGH' || t.priority === 'High') && t.status !== 'COMPLETED').map((t) => t.title),
+        completedTasks: tasks.filter((t) => t.done || t.status === 'COMPLETED').length,
+        pendingTasks: tasks.filter((t) => !t.done && t.status !== 'COMPLETED').map((t) => t.title),
       };
       const res = await fetchAiTaskRecommendation(payload, token);
       if (res && res.success && res.recommendation) {
         setAiTaskBriefing(res.recommendation);
-        showNotice(res.source && res.source.startsWith('ollama') ? 'AI Priority briefing generated by Ollama' : 'AI Priority briefing updated');
+        showNotice(res.source && res.source.startsWith('ollama') ? 'AI Briefing generated by Ollama' : 'AI Briefing updated');
       } else {
         throw new Error(res?.message || 'Empty response');
       }
     } catch (e) {
       console.log('AI Task briefing error:', e.message);
-      setAiTaskBriefing('Prioritize completing your top high-impact intention during your peak cognitive window.');
+      setAiTaskBriefing('Focus on completing your scheduled time blocks with deep concentration.');
       showNotice('AI briefing updated');
     } finally {
       setAiTaskLoading(false);
@@ -239,15 +278,17 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     });
   };
 
-  // Toggle completion with backend persistence
+  // Toggle completion with backend persistence & immediate undo support
   const toggleTask = async (id) => {
     const targetId = id;
+    let nowDone = false;
+
     // Optimistic UI update
     setTasks((prev) =>
       prev.map((t) => {
         const taskId = t._id || t.id;
         if (taskId === targetId) {
-          const nowDone = !t.done;
+          nowDone = !t.done;
           const timeString = new Date().toLocaleTimeString('en-US', {
             hour: 'numeric',
             minute: '2-digit',
@@ -263,6 +304,8 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
         return t;
       })
     );
+
+    showNotice(nowDone ? 'Task marked as completed' : 'Task restored to active list');
 
     try {
       const token = await getToken();
@@ -281,7 +324,6 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
 
   // Delete Task with Confirmation Alert & backend persistence
   const executeDeleteTask = async (taskId) => {
-    // Optimistic update
     setTasks((prev) => prev.filter((t) => (t._id || t.id) !== taskId));
     showNotice('Task deleted');
 
@@ -323,16 +365,15 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   const openCreateModal = () => {
     setTaskTitle('');
     setTaskDescription('');
-    setTaskDueDate('Today');
-    setTaskDueTime('10:00 AM');
-    setTaskPriority('Medium');
+    setTaskStartTime('');
+    setTaskEndTime('');
     setTaskCategory('Work');
     setTaskReminder(true);
     setTitleError('');
     setCreateModalVisible(true);
   };
 
-  // Submit New Task to Backend
+  // Submit New Task to Backend (with start/end times and start reminder)
   const handleCreateTask = async () => {
     if (!taskTitle.trim()) {
       setTitleError('Please enter a task title.');
@@ -342,9 +383,9 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     const payload = {
       title: taskTitle.trim(),
       description: taskDescription.trim(),
-      dueDate: taskDueDate,
-      dueTime: taskDueTime,
-      priority: taskPriority,
+      startTime: taskStartTime.trim(),
+      endTime: taskEndTime.trim(),
+      dueTime: taskStartTime.trim() || '',
       category: taskCategory,
       reminder: taskReminder,
       status: 'PENDING',
@@ -358,7 +399,8 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
         if (res && res.success && res.task) {
           setTasks((prev) => [res.task, ...prev]);
           setCreateModalVisible(false);
-          showNotice('Task added successfully');
+          showNotice('Task created with start reminder');
+          loadNotifications();
           return;
         }
       }
@@ -380,11 +422,10 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   // Open Edit Modal
   const openEditModal = (task) => {
     setSelectedTask(task);
-    setTaskTitle(task.title);
+    setTaskTitle(task.title || '');
     setTaskDescription(task.description || '');
-    setTaskDueDate(task.dueDate || 'Today');
-    setTaskDueTime(task.dueTime || '10:00 AM');
-    setTaskPriority(task.priority || 'Medium');
+    setTaskStartTime(task.startTime || task.dueTime || '');
+    setTaskEndTime(task.endTime || '');
     setTaskCategory(task.category || 'Work');
     setTaskReminder(task.reminder ?? true);
     setTitleError('');
@@ -403,9 +444,9 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     const updatePayload = {
       title: taskTitle.trim(),
       description: taskDescription.trim(),
-      dueDate: taskDueDate,
-      dueTime: taskDueTime,
-      priority: taskPriority,
+      startTime: taskStartTime.trim(),
+      endTime: taskEndTime.trim(),
+      dueTime: taskStartTime.trim() || '',
       category: taskCategory,
       reminder: taskReminder,
     };
@@ -436,68 +477,23 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     }
   };
 
-  // Quick Reschedule
-  const handleReschedule = async (task, newDate) => {
-    const taskId = task._id || task.id;
-    setTasks((prev) =>
-      prev.map((t) => ((t._id || t.id) === taskId ? { ...t, dueDate: newDate } : t))
-    );
-    setOptionsModalVisible(false);
-    showNotice(`Rescheduled to ${newDate}`);
-
-    try {
-      const token = await getToken();
-      if (token) {
-        await updateTask(taskId, { dueDate: newDate }, token);
-      }
-    } catch (err) {
-      console.log('[HumanOS Tasks] Error rescheduling task:', err.message);
-    }
-  };
-
-  // Quick Priority Change
-  const handleChangePriority = async (task, newPriority) => {
-    const taskId = task._id || task.id;
-    setTasks((prev) =>
-      prev.map((t) => ((t._id || t.id) === taskId ? { ...t, priority: newPriority } : t))
-    );
-    setOptionsModalVisible(false);
-    showNotice(`Priority set to ${newPriority}`);
-
-    try {
-      const token = await getToken();
-      if (token) {
-        await updateTask(taskId, { priority: newPriority }, token);
-      }
-    } catch (err) {
-      console.log('[HumanOS Tasks] Error updating task priority:', err.message);
-    }
-  };
-
   // Computed Progress Stats
-  const todayTasks = tasks.filter((t) => t.dueDate === 'Today');
-  const totalTodayCount = todayTasks.length;
-  const completedTodayCount = todayTasks.filter((t) => t.done).length;
-  const progressPercent =
-    totalTodayCount > 0 ? Math.round((completedTodayCount / totalTodayCount) * 100) : 0;
-
-  // Priority Breakdown Counts (Uncompleted)
-  const highPriorityCount = tasks.filter((t) => !t.done && t.priority === 'High').length;
-  const mediumPriorityCount = tasks.filter((t) => !t.done && t.priority === 'Medium').length;
-  const lowPriorityCount = tasks.filter((t) => !t.done && t.priority === 'Low').length;
+  const totalCount = tasks.length;
+  const completedCount = tasks.filter((t) => t.done || t.status === 'COMPLETED').length;
+  const progressPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
   // Motivational message
   const getMotivationalMessage = () => {
-    if (progressPercent === 100 && totalTodayCount > 0) {
-      return "Phenomenal! All today's tasks completed.";
+    if (progressPercent === 100 && totalCount > 0) {
+      return 'Phenomenal! All scheduled tasks completed.';
     }
     if (progressPercent >= 50) {
-      return "You're making good progress. Keep going.";
+      return "You're making great progress. Keep moving forward.";
     }
     if (progressPercent > 0) {
-      return 'Great momentum starting your day.';
+      return 'Solid start. Knock out the next time block.';
     }
-    return 'Ready to take on your key priorities today?';
+    return 'Ready to take on your scheduled task blocks?';
   };
 
   // Filtering Logic
@@ -508,43 +504,30 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase().trim();
       list = list.filter((t) => {
-        const title = (t?.title || t?.text || '').toLowerCase();
+        const title = (t?.title || '').toLowerCase();
         const desc = (t?.description || '').toLowerCase();
         const cat = (t?.category || '').toLowerCase();
         return title.includes(q) || desc.includes(q) || cat.includes(q);
       });
     }
 
-    // Priority filter (if selected)
-    if (priorityFilter) {
-      list = list.filter((t) => t.priority === priorityFilter);
-    }
-
     // Tab filter
-    if (activeFilter === 'Today') {
-      list = list.filter((t) => t.dueDate === 'Today');
-    } else if (activeFilter === 'Upcoming') {
-      list = list.filter((t) => t.dueDate !== 'Today' && !t.done);
+    if (activeFilter === 'Active') {
+      list = list.filter((t) => !t.done && t.status !== 'COMPLETED');
     } else if (activeFilter === 'Completed') {
-      list = list.filter((t) => t.done);
+      list = list.filter((t) => t.done || t.status === 'COMPLETED');
+    } else if (activeFilter !== 'All') {
+      list = list.filter((t) => t.category?.toLowerCase() === activeFilter.toLowerCase());
     }
 
     return list;
   };
 
   const filteredTasks = getFilteredTasks();
+  const recentlyCompletedTasks = tasks.filter((t) => t.done || t.status === 'COMPLETED');
 
-  // Upcoming subset for secondary section (when in All or Today view)
-  const upcomingTasks = tasks.filter((t) => t.dueDate !== 'Today' && !t.done);
-
-  // Recently completed subset
-  const recentlyCompletedTasks = tasks.filter((t) => t.done);
-
-  const filterOptions = ['All', 'Today', 'Upcoming', 'Completed'];
-  const priorityOptions = ['High', 'Medium', 'Low'];
+  const filterOptions = ['All', 'Active', 'Completed', 'Work', 'Personal', 'Health', 'Study'];
   const categoryOptions = ['Work', 'Personal', 'Health', 'Study', 'Finance', 'Other'];
-  const dateOptions = ['Today', 'Tomorrow', 'Friday', 'Next Week'];
-  const timeOptions = ['09:00 AM', '10:00 AM', '12:30 PM', '03:00 PM', '05:00 PM', '07:00 PM'];
 
   const appContent = (
     <View style={[styles.mainWrapper, { backgroundColor: theme.colors.pageBg }]}>
@@ -576,7 +559,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
             <View>
               <Text style={styles.headerKicker}>HUMANOS EXECUTION</Text>
               <Text style={styles.headerTitle}>Tasks</Text>
-              <Text style={styles.headerSubtitle}>Stay focused on what matters today.</Text>
+              <Text style={styles.headerSubtitle}>Scheduled time blocks & actionable steps.</Text>
             </View>
 
             <View style={styles.headerActionRow}>
@@ -656,7 +639,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
             <View style={styles.summaryTopRow}>
               <View>
                 <Text style={styles.summaryKicker}>DAILY DISCIPLINE</Text>
-                <Text style={[styles.summaryTitle, { color: theme.colors.textPrimary }]}>Today's Progress</Text>
+                <Text style={[styles.summaryTitle, { color: theme.colors.textPrimary }]}>Task Completion</Text>
               </View>
               <View style={styles.progressPercentBadge}>
                 <Text style={styles.progressPercentText}>{progressPercent}%</Text>
@@ -675,8 +658,8 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
 
             <View style={styles.summaryFooterRow}>
               <Text style={[styles.summaryCountText, { color: theme.colors.textSecondary }]}>
-                <Text style={[styles.summaryCountBold, { color: theme.colors.textPrimary }]}>{completedTodayCount}</Text> of{' '}
-                <Text style={[styles.summaryCountBold, { color: theme.colors.textPrimary }]}>{totalTodayCount}</Text> tasks completed
+                <Text style={[styles.summaryCountBold, { color: theme.colors.textPrimary }]}>{completedCount}</Text> of{' '}
+                <Text style={[styles.summaryCountBold, { color: theme.colors.textPrimary }]}>{totalCount}</Text> tasks completed
               </Text>
               <Text style={styles.summaryMotivationalText}>{getMotivationalMessage()}</Text>
             </View>
@@ -752,115 +735,25 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                     >
                       {filter}
                     </Text>
-                    {filter === 'Today' && (
-                      <View
-                        style={[
-                          styles.pillBadge,
-                          isSelected ? styles.pillBadgeActive : [styles.pillBadgeInactive, { backgroundColor: theme.colors.cardAltBg }],
-                        ]}
-                      >
-                        <Text
-                          style={[
-                            styles.pillBadgeText,
-                            isSelected ? styles.pillBadgeTextActive : [styles.pillBadgeTextInactive, { color: theme.colors.textMuted }],
-                          ]}
-                        >
-                          {totalTodayCount}
-                        </Text>
-                      </View>
-                    )}
                   </Pressable>
                 );
               })}
             </ScrollView>
           </View>
 
-          {/* ==================== 4. PRIORITY SUMMARY ==================== */}
-          <View style={styles.prioritySection}>
-            <View style={styles.sectionHeaderRow}>
-              <Text style={styles.sectionSubTitle}>PRIORITY BREAKDOWN</Text>
-              {priorityFilter && (
-                <Pressable
-                  onPress={() => setPriorityFilter(null)}
-                  style={({ pressed }) => [
-                    styles.clearFilterRow,
-                    isWeb && styles.webPointer,
-                    pressed && styles.pressedOpacity,
-                  ]}
-                >
-                  <Text style={styles.clearFilterText}>Clear priority filter</Text>
-                  <X size={12} color="#6366F1" strokeWidth={2.4} />
-                </Pressable>
-              )}
-            </View>
-
-            <View style={styles.priorityGrid}>
-              <Pressable
-                onPress={() => setPriorityFilter(priorityFilter === 'High' ? null : 'High')}
-                style={({ pressed }) => [
-                  styles.priorityCard,
-                  { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
-                  priorityFilter === 'High' && styles.priorityCardActive,
-                  isWeb && styles.webPointer,
-                  pressed && styles.pressedOpacity,
-                ]}
-              >
-                <View style={styles.priorityCardLeft}>
-                  <View style={[styles.priorityIndicatorDot, styles.dotHigh]} />
-                  <Text style={[styles.priorityLabel, { color: theme.colors.textSecondary }]}>High Priority</Text>
-                </View>
-                <Text style={[styles.priorityCount, styles.countHigh]}>{highPriorityCount}</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => setPriorityFilter(priorityFilter === 'Medium' ? null : 'Medium')}
-                style={({ pressed }) => [
-                  styles.priorityCard,
-                  { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
-                  priorityFilter === 'Medium' && styles.priorityCardActive,
-                  isWeb && styles.webPointer,
-                  pressed && styles.pressedOpacity,
-                ]}
-              >
-                <View style={styles.priorityCardLeft}>
-                  <View style={[styles.priorityIndicatorDot, styles.dotMedium]} />
-                  <Text style={[styles.priorityLabel, { color: theme.colors.textSecondary }]}>Medium</Text>
-                </View>
-                <Text style={[styles.priorityCount, styles.countMedium]}>{mediumPriorityCount}</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() => setPriorityFilter(priorityFilter === 'Low' ? null : 'Low')}
-                style={({ pressed }) => [
-                  styles.priorityCard,
-                  { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
-                  priorityFilter === 'Low' && styles.priorityCardActive,
-                  isWeb && styles.webPointer,
-                  pressed && styles.pressedOpacity,
-                ]}
-              >
-                <View style={styles.priorityCardLeft}>
-                  <View style={[styles.priorityIndicatorDot, styles.dotLow]} />
-                  <Text style={[styles.priorityLabel, { color: theme.colors.textSecondary }]}>Low</Text>
-                </View>
-                <Text style={[styles.priorityCount, styles.countLow]}>{lowPriorityCount}</Text>
-              </Pressable>
-            </View>
-          </View>
-
-          {/* ==================== 5. TASK LIST ==================== */}
+          {/* ==================== 4. TASK LIST ==================== */}
           <View style={styles.taskListSection}>
             <View style={styles.sectionHeaderRow}>
               <View>
-                <Text style={styles.sectionSubTitle}>ACTIVE QUEUE</Text>
+                <Text style={styles.sectionSubTitle}>SCHEDULED TASKS</Text>
                 <Text style={[styles.sectionMainTitle, { color: theme.colors.textPrimary }]}>
-                  {activeFilter === 'Today'
-                    ? "Today's Tasks"
-                    : activeFilter === 'Upcoming'
-                      ? 'Upcoming Tasks'
-                      : activeFilter === 'Completed'
-                        ? 'Completed Tasks'
-                        : 'All Tasks'}
+                  {activeFilter === 'Active'
+                    ? 'Active Tasks'
+                    : activeFilter === 'Completed'
+                      ? 'Completed Tasks'
+                      : activeFilter === 'All'
+                        ? 'All Tasks'
+                        : `${activeFilter} Tasks`}
                 </Text>
               </View>
               <Pressable
@@ -882,8 +775,8 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 <View style={styles.emptyStateIconCircle}>
                   <Sparkles size={24} color="#6366F1" strokeWidth={2} />
                 </View>
-                <Text style={[styles.emptyStateTitle, { color: theme.colors.textPrimary }]}>No tasks here</Text>
-                <Text style={[styles.emptyStateDesc, { color: theme.colors.textSecondary }]}>You're all caught up.</Text>
+                <Text style={[styles.emptyStateTitle, { color: theme.colors.textPrimary }]}>No tasks in this list</Text>
+                <Text style={[styles.emptyStateDesc, { color: theme.colors.textSecondary }]}>Add a new task with start and end times.</Text>
                 <Pressable
                   onPress={openCreateModal}
                   style={({ pressed }) => [
@@ -900,29 +793,33 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
               <View style={styles.tasksListContainer}>
                 {filteredTasks.map((task) => {
                   const taskId = task._id || task.id;
-                  const isHigh = task.priority === 'High' || task.priority === 'HIGH';
-                  const isMed = task.priority === 'Medium' || task.priority === 'MEDIUM';
+                  const isDone = task.done || task.status === 'COMPLETED';
+                  const hasTime = !!(task.startTime || task.dueTime || task.endTime);
+                  const timeDisplay = task.startTime && task.endTime
+                    ? `${task.startTime} – ${task.endTime}`
+                    : (task.startTime || task.dueTime || task.endTime || '');
+
                   return (
                     <View
                       key={taskId}
                       style={[
                         styles.taskCard,
                         { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
-                        task.done && [styles.taskCardCompleted, { backgroundColor: theme.colors.cardAltBg }],
+                        isDone && [styles.taskCardCompleted, { backgroundColor: theme.colors.cardAltBg }],
                       ]}
                     >
-                      {/* Checkbox (Functional) */}
+                      {/* Checkbox (Click to toggle complete / undo) */}
                       <Pressable
                         onPress={() => toggleTask(taskId)}
                         hitSlop={8}
                         style={({ pressed }) => [
                           styles.checkboxContainer,
-                          task.done && styles.checkboxContainerActive,
+                          isDone && styles.checkboxContainerActive,
                           isWeb && styles.webPointer,
                           pressed && styles.pressedOpacity,
                         ]}
                       >
-                        {task.done && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
+                        {isDone && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
                       </Pressable>
 
                       {/* Main Task Content */}
@@ -938,7 +835,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                           style={[
                             styles.taskTitleText,
                             { color: theme.colors.textPrimary },
-                            task.done && styles.taskTitleTextDone,
+                            isDone && styles.taskTitleTextDone,
                           ]}
                           numberOfLines={2}
                         >
@@ -949,7 +846,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                           <Text
                             style={[
                               styles.taskDescriptionText,
-                              task.done && styles.taskDescriptionTextDone,
+                              isDone && styles.taskDescriptionTextDone,
                             ]}
                             numberOfLines={1}
                           >
@@ -958,34 +855,12 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                         )}
 
                         <View style={styles.taskMetaRow}>
-                          <View style={styles.timeBadgeRow}>
-                            <Clock size={11} color="#64748B" strokeWidth={2.2} />
-                            <Text style={styles.taskTimeBadge}>{task.dueTime}</Text>
-                          </View>
-
-                          <View
-                            style={[
-                              styles.priorityBadge,
-                              isHigh
-                                ? styles.badgeHigh
-                                : isMed
-                                  ? styles.badgeMedium
-                                  : styles.badgeLow,
-                            ]}
-                          >
-                            <Text
-                              style={[
-                                styles.priorityBadgeText,
-                                isHigh
-                                  ? styles.badgeTextHigh
-                                  : isMed
-                                    ? styles.badgeTextMedium
-                                    : styles.badgeTextLow,
-                              ]}
-                            >
-                              {task.priority}
-                            </Text>
-                          </View>
+                          {hasTime && (
+                            <View style={styles.timeBadgeRow}>
+                              <Clock size={11} color="#6366F1" strokeWidth={2.2} />
+                              <Text style={styles.taskTimeBadge}>{timeDisplay}</Text>
+                            </View>
+                          )}
 
                           {!!task.category && (
                             <View style={styles.categoryBadge}>
@@ -993,30 +868,58 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                             </View>
                           )}
 
-                          {task.dueDate !== 'Today' && (
-                            <View style={styles.dueDateBadge}>
-                              <Calendar size={10} color="#4F46E5" strokeWidth={2.2} />
-                              <Text style={styles.dueDateBadgeText}>{task.dueDate}</Text>
-                            </View>
+                          {isDone && (
+                            <Text style={styles.completedTimestampText}>
+                              Done {task.completedAt ? `• ${task.completedAt}` : ''}
+                            </Text>
                           )}
                         </View>
                       </Pressable>
 
-                      {/* Three-Dot Options Button */}
-                      <Pressable
-                        onPress={() => {
-                          setSelectedTask(task);
-                          setOptionsModalVisible(true);
-                        }}
-                        hitSlop={10}
-                        style={({ pressed }) => [
-                          styles.threeDotBtn,
-                          isWeb && styles.webPointer,
-                          pressed && styles.pressedOpacity,
-                        ]}
-                      >
-                        <MoreVertical size={16} color="#64748B" strokeWidth={2.2} />
-                      </Pressable>
+                      {/* If Completed: Quick Undo & Edit Buttons for mistake recovery */}
+                      {isDone ? (
+                        <View style={styles.quickCompletedActions}>
+                          <Pressable
+                            onPress={() => toggleTask(taskId)}
+                            style={({ pressed }) => [
+                              styles.undoMiniBtn,
+                              { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF' },
+                              isWeb && styles.webPointer,
+                              pressed && styles.pressedOpacity,
+                            ]}
+                          >
+                            <RotateCcw size={11} color="#4F46E5" strokeWidth={2.4} />
+                            <Text style={styles.undoMiniText}>Undo</Text>
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => openEditModal(task)}
+                            style={({ pressed }) => [
+                              styles.editMiniBtn,
+                              { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                              isWeb && styles.webPointer,
+                              pressed && styles.pressedOpacity,
+                            ]}
+                          >
+                            <Pencil size={11} color="#64748B" strokeWidth={2.2} />
+                          </Pressable>
+                        </View>
+                      ) : (
+                        <Pressable
+                          onPress={() => {
+                            setSelectedTask(task);
+                            setOptionsModalVisible(true);
+                          }}
+                          hitSlop={10}
+                          style={({ pressed }) => [
+                            styles.threeDotBtn,
+                            isWeb && styles.webPointer,
+                            pressed && styles.pressedOpacity,
+                          ]}
+                        >
+                          <MoreVertical size={16} color="#64748B" strokeWidth={2.2} />
+                        </Pressable>
+                      )}
                     </View>
                   );
                 })}
@@ -1024,93 +927,73 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
             )}
           </View>
 
-          {/* ==================== 9. UPCOMING TASKS (Visible in Today/All View) ==================== */}
-          {(activeFilter === 'Today' || activeFilter === 'All') && upcomingTasks.length > 0 && (
-            <View style={styles.upcomingSection}>
-              <View style={styles.sectionHeaderRow}>
-                <View>
-                  <Text style={styles.sectionSubTitle}>FORWARD PLANNING</Text>
-                  <Text style={styles.sectionMainTitle}>Upcoming</Text>
-                </View>
-              </View>
-
-              <View style={styles.upcomingList}>
-                {upcomingTasks.slice(0, 3).map((item) => (
-                  <View key={item.id} style={styles.upcomingCard}>
-                    <View style={styles.upcomingDateColumn}>
-                      <Text style={styles.upcomingDateLabel}>{item.dueDate}</Text>
-                      <Text style={styles.upcomingTimeLabel}>{item.dueTime}</Text>
-                    </View>
-
-                    <View style={styles.upcomingContentColumn}>
-                      <Text style={styles.upcomingTaskTitle}>{item.title}</Text>
-                      <View style={styles.upcomingMetaRow}>
-                        <Text style={styles.upcomingCategoryText}>{item.category || 'Task'}</Text>
-                        <Text style={styles.upcomingDot}>•</Text>
-                        <Text
-                          style={[
-                            styles.upcomingPriorityText,
-                            item.priority === 'High' ? styles.badgeTextHigh : styles.badgeTextMedium,
-                          ]}
-                        >
-                          {item.priority} Priority
-                        </Text>
-                      </View>
-                    </View>
-
-                    <Pressable
-                      onPress={() => toggleTask(item.id)}
-                      style={({ pressed }) => [
-                        styles.upcomingCheckBtn,
-                        isWeb && styles.webPointer,
-                        pressed && styles.pressedOpacity,
-                      ]}
-                    >
-                      <Check size={12} color="#4F46E5" strokeWidth={3} />
-                    </Pressable>
-                  </View>
-                ))}
-              </View>
-            </View>
-          )}
-
-          {/* ==================== 10. RECENTLY COMPLETED ==================== */}
-          {(activeFilter === 'Today' || activeFilter === 'All') && recentlyCompletedTasks.length > 0 && (
+          {/* ==================== 5. COMPLETED TASKS (Visible in All view when there are completed tasks) ==================== */}
+          {activeFilter === 'All' && recentlyCompletedTasks.length > 0 && (
             <View style={styles.completedSection}>
               <View style={styles.sectionHeaderRow}>
                 <View>
-                  <Text style={styles.sectionSubTitle}>ACCOMPLISHED</Text>
-                  <Text style={styles.sectionMainTitle}>Recently Completed</Text>
+                  <Text style={styles.sectionSubTitle}>COMPLETED LOG</Text>
+                  <Text style={[styles.sectionMainTitle, { color: theme.colors.textPrimary }]}>Completed Tasks</Text>
                 </View>
               </View>
 
               <View style={styles.completedList}>
-                {recentlyCompletedTasks.slice(0, 3).map((item) => (
-                  <View key={item.id} style={styles.completedCard}>
-                    <View style={styles.completedCheckIconCircle}>
-                      <Check size={12} color="#10B981" strokeWidth={3} />
+                {recentlyCompletedTasks.slice(0, 5).map((item) => {
+                  const itemId = item._id || item.id;
+                  return (
+                    <View key={itemId} style={[styles.completedCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                      <View style={styles.completedCheckIconCircle}>
+                        <Check size={12} color="#10B981" strokeWidth={3} />
+                      </View>
+                      <View style={styles.completedTextWrapper}>
+                        <Text style={[styles.completedTaskTitle, { color: theme.colors.textPrimary }]}>{item.title}</Text>
+                        <Text style={styles.completedTimeText}>
+                          {item.startTime || item.dueTime || 'Scheduled'} – {item.endTime || 'End'} {item.completedAt ? `• Completed at ${item.completedAt}` : ''}
+                        </Text>
+                      </View>
+
+                      {/* Undo / Edit Buttons for Mistake recovery */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                        <Pressable
+                          onPress={() => toggleTask(itemId)}
+                          style={({ pressed }) => [
+                            styles.undoMiniBtn,
+                            { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF' },
+                            isWeb && styles.webPointer,
+                            pressed && styles.pressedOpacity,
+                          ]}
+                        >
+                          <RotateCcw size={11} color="#4F46E5" strokeWidth={2.4} />
+                          <Text style={styles.undoMiniText}>Undo</Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => openEditModal(item)}
+                          style={({ pressed }) => [
+                            styles.editMiniBtn,
+                            { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
+                            isWeb && styles.webPointer,
+                            pressed && styles.pressedOpacity,
+                          ]}
+                        >
+                          <Pencil size={11} color="#64748B" strokeWidth={2.2} />
+                        </Pressable>
+                      </View>
                     </View>
-                    <View style={styles.completedTextWrapper}>
-                      <Text style={styles.completedTaskTitle}>{item.title}</Text>
-                      <Text style={styles.completedTimeText}>
-                        Completed {item.completedAt ? `at ${item.completedAt}` : 'today'}
-                      </Text>
-                    </View>
-                  </View>
-                ))}
+                  );
+                })}
               </View>
             </View>
           )}
 
           {/* Spacing for BottomNavigation */}
-          <View style={{ height: 24 }} />
+          <View style={{ height: 32 }} />
         </View>
       </ScrollView>
 
       {/* Bottom Navigation */}
       <BottomNavigation activeTab={activeTab} onTabPress={handleTabChange} />
 
-      {/* ==================== 8. CREATE TASK MODAL ==================== */}
+      {/* ==================== 6. CREATE TASK MODAL ==================== */}
       <Modal
         visible={createModalVisible}
         transparent
@@ -1118,16 +1001,17 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
         onRequestClose={() => setCreateModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
               <View>
-                <Text style={styles.modalKicker}>NEW ITEM</Text>
-                <Text style={styles.modalTitle}>Create New Task</Text>
+                <Text style={styles.modalKicker}>NEW TASK</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Create New Task</Text>
               </View>
               <Pressable
                 onPress={() => setCreateModalVisible(false)}
                 style={({ pressed }) => [
                   styles.modalCloseBtn,
+                  { backgroundColor: theme.colors.cardAltBg },
                   isWeb && styles.webPointer,
                   pressed && styles.pressedOpacity,
                 ]}
@@ -1139,16 +1023,17 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               {/* Task Title */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>
                   Task Title <Text style={styles.requiredStar}>*</Text>
                 </Text>
                 <TextInput
                   style={[
                     styles.modalInput,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
                     !!titleError && styles.modalInputError,
                     isWeb && styles.webOutlineNone,
                   ]}
-                  placeholder="Enter task title..."
+                  placeholder="What needs to be done?"
                   placeholderTextColor="#94A3B8"
                   value={taskTitle}
                   onChangeText={(text) => {
@@ -1162,10 +1047,15 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
 
               {/* Description */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Description (Optional)</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Description (Optional)</Text>
                 <TextInput
-                  style={[styles.modalInput, styles.modalTextArea, isWeb && styles.webOutlineNone]}
-                  placeholder="Add notes, deliverables or links..."
+                  style={[
+                    styles.modalInput,
+                    styles.modalTextArea,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                    isWeb && styles.webOutlineNone,
+                  ]}
+                  placeholder="Add details, notes, or specific checklist..."
                   placeholderTextColor="#94A3B8"
                   value={taskDescription}
                   onChangeText={setTaskDescription}
@@ -1174,84 +1064,90 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 />
               </View>
 
-              {/* Due Date Selector */}
+              {/* Start Time with Clock Picker Trigger */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Due Date</Text>
-                <View style={styles.modalChipRow}>
-                  {dateOptions.map((d) => (
-                    <Pressable
-                      key={d}
-                      onPress={() => setTaskDueDate(d)}
-                      style={[styles.modalChip, taskDueDate === d && styles.modalChipActive]}
-                    >
-                      <Text
-                        style={[
-                          styles.modalChipText,
-                          taskDueDate === d && styles.modalChipTextActive,
-                        ]}
-                      >
-                        {d}
-                      </Text>
-                    </Pressable>
-                  ))}
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Start Time</Text>
+                <View style={styles.timeInputRow}>
+                  <TextInput
+                    style={[
+                      styles.modalInput,
+                      styles.timeInputFlex,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                      isWeb && styles.webOutlineNone,
+                    ]}
+                    value={taskStartTime}
+                    onChangeText={setTaskStartTime}
+                    placeholder="e.g. 09:00 AM"
+                    placeholderTextColor="#94A3B8"
+                  />
+                  <Pressable
+                    onPress={() => handleOpenTimePicker('start')}
+                    style={({ pressed }) => [
+                      styles.clockIconBtn,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <Clock size={17} color="#4F46E5" strokeWidth={2.2} />
+                  </Pressable>
                 </View>
               </View>
 
-              {/* Due Time Selector */}
+              {/* End Time with Clock Picker Trigger */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Due Time</Text>
-                <View style={styles.modalChipRow}>
-                  {timeOptions.map((t) => (
-                    <Pressable
-                      key={t}
-                      onPress={() => setTaskDueTime(t)}
-                      style={[styles.modalChip, taskDueTime === t && styles.modalChipActive]}
-                    >
-                      <Text
-                        style={[
-                          styles.modalChipText,
-                          taskDueTime === t && styles.modalChipTextActive,
-                        ]}
-                      >
-                        {t}
-                      </Text>
-                    </Pressable>
-                  ))}
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>End Time</Text>
+                <View style={styles.timeInputRow}>
+                  <TextInput
+                    style={[
+                      styles.modalInput,
+                      styles.timeInputFlex,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                      isWeb && styles.webOutlineNone,
+                    ]}
+                    value={taskEndTime}
+                    onChangeText={setTaskEndTime}
+                    placeholder="e.g. 10:00 AM"
+                    placeholderTextColor="#94A3B8"
+                  />
+                  <Pressable
+                    onPress={() => handleOpenTimePicker('end')}
+                    style={({ pressed }) => [
+                      styles.clockIconBtn,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <Clock size={17} color="#4F46E5" strokeWidth={2.2} />
+                  </Pressable>
                 </View>
               </View>
 
-              {/* Priority Selector */}
+              {/* Category Selector */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Priority</Text>
-                <View style={styles.prioritySelectorRow}>
-                  {priorityOptions.map((p) => {
-                    const isSelected = taskPriority === p;
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Category</Text>
+                <View style={styles.modalChipRow}>
+                  {categoryOptions.map((c) => {
+                    const isCatSelected = taskCategory === c;
                     return (
                       <Pressable
-                        key={p}
-                        onPress={() => setTaskPriority(p)}
+                        key={c}
+                        onPress={() => setTaskCategory(c)}
                         style={[
-                          styles.prioritySelectBtn,
-                          isSelected && styles.prioritySelectBtnActive,
+                          styles.modalChip,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                          isCatSelected && styles.modalChipActive,
                         ]}
                       >
-                        <View
-                          style={[
-                            styles.prioritySelectDot,
-                            p === 'High'
-                              ? styles.dotHigh
-                              : p === 'Medium'
-                                ? styles.dotMedium
-                                : styles.dotLow,
-                          ]}
-                        />
                         <Text
                           style={[
-                            styles.prioritySelectText,
-                            isSelected && styles.prioritySelectTextActive,
+                            styles.modalChipText,
+                            { color: theme.colors.textSecondary },
+                            isCatSelected && styles.modalChipTextActive,
                           ]}
                         >
-                          {p}
+                          {c}
                         </Text>
                       </Pressable>
                     );
@@ -1259,34 +1155,15 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 </View>
               </View>
 
-              {/* Category Selector */}
-              <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Category</Text>
-                <View style={styles.modalChipRow}>
-                  {categoryOptions.map((c) => (
-                    <Pressable
-                      key={c}
-                      onPress={() => setTaskCategory(c)}
-                      style={[styles.modalChip, taskCategory === c && styles.modalChipActive]}
-                    >
-                      <Text
-                        style={[
-                          styles.modalChipText,
-                          taskCategory === c && styles.modalChipTextActive,
-                        ]}
-                      >
-                        {c}
-                      </Text>
-                    </Pressable>
-                  ))}
-                </View>
-              </View>
-
-              {/* Reminder Switch */}
-              <View style={styles.reminderRow}>
-                <View>
-                  <Text style={styles.modalInputLabel}>Reminder Notification</Text>
-                  <Text style={styles.reminderSubText}>Alert before task due time</Text>
+              {/* Task Start Reminder Notification Switch */}
+              <View style={[styles.reminderRow, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary, marginBottom: 2 }]}>
+                    Start Notification
+                  </Text>
+                  <Text style={[styles.reminderSubText, { color: theme.colors.textSecondary }]}>
+                    Receive an alert when this task is scheduled to start
+                  </Text>
                 </View>
                 <Switch
                   value={taskReminder}
@@ -1302,17 +1179,19 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   onPress={() => setCreateModalVisible(false)}
                   style={({ pressed }) => [
                     styles.modalCancelBtn,
+                    { backgroundColor: theme.colors.cardAltBg },
                     isWeb && styles.webPointer,
                     pressed && styles.pressedOpacity,
                   ]}
                 >
-                  <Text style={styles.modalCancelText}>Cancel</Text>
+                  <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
                 </Pressable>
 
                 <Pressable
                   onPress={handleCreateTask}
                   style={({ pressed }) => [
                     styles.modalSubmitBtn,
+                    { backgroundColor: '#4F46E5' },
                     isWeb && styles.webPointer,
                     pressed && styles.pressedOpacity,
                   ]}
@@ -1325,7 +1204,228 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
         </View>
       </Modal>
 
-      {/* ==================== 12. TASK OPTIONS SHEET ==================== */}
+      {/* ==================== 7. INTERACTIVE CLOCK / TIME PICKER MODAL ==================== */}
+      <Modal
+        visible={timePickerModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTimePickerModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.timePickerModalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            {/* Header */}
+            <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
+              <View>
+                <Text style={styles.modalKicker}>INTERACTIVE CLOCK</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+                  {timePickerTarget === 'start' ? 'Select Start Time' : 'Select End Time'}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setTimePickerModalVisible(false)}
+                style={[styles.modalCloseBtn, { backgroundColor: theme.colors.cardAltBg }]}
+              >
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
+              </Pressable>
+            </View>
+
+            {/* Digital Clock Readout */}
+            <View style={styles.clockDigitalDisplay}>
+              <View style={styles.clockDigitsRow}>
+                <Pressable
+                  onPress={() => setPickerMode('hour')}
+                  style={[
+                    styles.clockDigitBox,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                    pickerMode === 'hour' && styles.clockDigitBoxActive,
+                  ]}
+                >
+                  <Text style={[styles.clockDigitText, { color: theme.colors.textPrimary }, pickerMode === 'hour' && styles.clockDigitTextActive]}>
+                    {String(pickerHour).padStart(2, '0')}
+                  </Text>
+                  <Text style={[styles.clockDigitSub, { color: theme.colors.textMuted }, pickerMode === 'hour' && styles.clockDigitSubActive]}>
+                    HOUR
+                  </Text>
+                </Pressable>
+
+                <Text style={[styles.clockColon, { color: theme.colors.textPrimary }]}>:</Text>
+
+                <Pressable
+                  onPress={() => setPickerMode('minute')}
+                  style={[
+                    styles.clockDigitBox,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                    pickerMode === 'minute' && styles.clockDigitBoxActive,
+                  ]}
+                >
+                  <Text style={[styles.clockDigitText, { color: theme.colors.textPrimary }, pickerMode === 'minute' && styles.clockDigitTextActive]}>
+                    {String(pickerMinute).padStart(2, '0')}
+                  </Text>
+                  <Text style={[styles.clockDigitSub, { color: theme.colors.textMuted }, pickerMode === 'minute' && styles.clockDigitSubActive]}>
+                    MIN
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* AM / PM Switcher */}
+              <View style={[styles.clockAmPmContainer, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Pressable
+                  onPress={() => setPickerPeriod('AM')}
+                  style={[
+                    styles.clockAmPmBtn,
+                    pickerPeriod === 'AM' && styles.clockAmPmBtnActive,
+                  ]}
+                >
+                  <Text style={[styles.clockAmPmText, { color: theme.colors.textSecondary }, pickerPeriod === 'AM' && styles.clockAmPmTextActive]}>
+                    AM
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setPickerPeriod('PM')}
+                  style={[
+                    styles.clockAmPmBtn,
+                    pickerPeriod === 'PM' && styles.clockAmPmBtnActive,
+                  ]}
+                >
+                  <Text style={[styles.clockAmPmText, { color: theme.colors.textSecondary }, pickerPeriod === 'PM' && styles.clockAmPmTextActive]}>
+                    PM
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Mode Selector Tabs */}
+            <View style={styles.clockModeTabsRow}>
+              <Pressable
+                onPress={() => setPickerMode('hour')}
+                style={[styles.clockModeTab, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }, pickerMode === 'hour' && styles.clockModeTabActive]}
+              >
+                <Text style={[styles.clockModeTabText, { color: theme.colors.textSecondary }, pickerMode === 'hour' && styles.clockModeTabTextActive]}>
+                  Hour (1 - 12)
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setPickerMode('minute')}
+                style={[styles.clockModeTab, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }, pickerMode === 'minute' && styles.clockModeTabActive]}
+              >
+                <Text style={[styles.clockModeTabText, { color: theme.colors.textSecondary }, pickerMode === 'minute' && styles.clockModeTabTextActive]}>
+                  Minute (00 - 55)
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Clock Grid */}
+            {pickerMode === 'hour' ? (
+              <View style={styles.clockGrid}>
+                {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((hr) => {
+                  const isSelected = pickerHour === hr;
+                  return (
+                    <Pressable
+                      key={`hr-${hr}`}
+                      onPress={() => {
+                        setPickerHour(hr);
+                        setPickerMode('minute');
+                      }}
+                      style={({ pressed }) => [
+                        styles.clockCell,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isSelected && styles.clockCellSelected,
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <Text style={[styles.clockCellText, { color: theme.colors.textPrimary }, isSelected && styles.clockCellTextSelected]}>
+                        {hr}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <View>
+                <View style={styles.clockGrid}>
+                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((min) => {
+                    const isSelected = pickerMinute === min;
+                    return (
+                      <Pressable
+                        key={`min-${min}`}
+                        onPress={() => setPickerMinute(min)}
+                        style={({ pressed }) => [
+                          styles.clockCell,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                          isSelected && styles.clockCellSelected,
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
+                        ]}
+                      >
+                        <Text style={[styles.clockCellText, { color: theme.colors.textPrimary }, isSelected && styles.clockCellTextSelected]}>
+                          {String(min).padStart(2, '0')}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {/* Fine minute adjustment */}
+                <View style={styles.minuteAdjustRow}>
+                  <Pressable
+                    onPress={() => setPickerMinute((prev) => (prev > 0 ? prev - 1 : 59))}
+                    style={[styles.minuteAdjustBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                  >
+                    <Text style={[styles.minuteAdjustBtnText, { color: theme.colors.textPrimary }]}>-1 Min</Text>
+                  </Pressable>
+                  <Text style={[styles.minuteAdjustLabel, { color: theme.colors.textMuted }]}>
+                    Exact: {String(pickerMinute).padStart(2, '0')}m
+                  </Text>
+                  <Pressable
+                    onPress={() => setPickerMinute((prev) => (prev < 59 ? prev + 1 : 0))}
+                    style={[styles.minuteAdjustBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                  >
+                    <Text style={[styles.minuteAdjustBtnText, { color: theme.colors.textPrimary }]}>+1 Min</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {/* Quick Preset Time Chips */}
+            <View style={styles.clockQuickPresetsRow}>
+              {['09:00 AM', '12:00 PM', '02:30 PM', '05:00 PM'].map((preset) => (
+                <Pressable
+                  key={preset}
+                  onPress={() => {
+                    const parsed = parseTimeString(preset);
+                    setPickerHour(parsed.hour);
+                    setPickerMinute(parsed.minute);
+                    setPickerPeriod(parsed.period);
+                  }}
+                  style={[styles.clockPresetChip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                >
+                  <Text style={[styles.clockPresetChipText, { color: theme.colors.textSecondary }]}>{preset}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Modal Actions */}
+            <View style={styles.clockActionsRow}>
+              <Pressable
+                onPress={() => setTimePickerModalVisible(false)}
+                style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
+              >
+                <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleApplyTimePicker}
+                style={[styles.modalSubmitBtn, { backgroundColor: '#4F46E5' }]}
+              >
+                <Text style={styles.modalSubmitText}>Set Time</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ==================== 8. TASK OPTIONS SHEET ==================== */}
       <Modal
         visible={optionsModalVisible}
         transparent
@@ -1336,9 +1436,9 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
           style={styles.optionsModalOverlay}
           onPress={() => setOptionsModalVisible(false)}
         >
-          <View style={styles.optionsSheet}>
+          <View style={[styles.optionsSheet, { backgroundColor: theme.colors.cardBg }]}>
             <View style={styles.optionsHandle} />
-            <Text style={styles.optionsTaskTitle} numberOfLines={1}>
+            <Text style={[styles.optionsTaskTitle, { color: theme.colors.textPrimary, borderBottomColor: theme.colors.border }]} numberOfLines={1}>
               {selectedTask?.title}
             </Text>
 
@@ -1352,48 +1452,23 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 ]}
               >
                 <Pencil size={18} color="#4F46E5" strokeWidth={2.2} />
-                <Text style={styles.optionLabel}>Edit Task</Text>
+                <Text style={[styles.optionLabel, { color: theme.colors.textPrimary }]}>Edit Task</Text>
               </Pressable>
 
               <Pressable
-                onPress={() =>
-                  handleChangePriority(
-                    selectedTask,
-                    selectedTask?.priority === 'High'
-                      ? 'Medium'
-                      : selectedTask?.priority === 'Medium'
-                        ? 'Low'
-                        : 'High'
-                  )
-                }
+                onPress={() => {
+                  setOptionsModalVisible(false);
+                  if (selectedTask) toggleTask(selectedTask._id || selectedTask.id);
+                }}
                 style={({ pressed }) => [
                   styles.optionRow,
                   isWeb && styles.webPointer,
                   pressed && styles.pressedOpacity,
                 ]}
               >
-                <Zap size={18} color="#4F46E5" strokeWidth={2.2} />
-                <Text style={styles.optionLabel}>
-                  Change Priority (Current: {selectedTask?.priority})
-                </Text>
-              </Pressable>
-
-              <Pressable
-                onPress={() =>
-                  handleReschedule(
-                    selectedTask,
-                    selectedTask?.dueDate === 'Today' ? 'Tomorrow' : 'Today'
-                  )
-                }
-                style={({ pressed }) => [
-                  styles.optionRow,
-                  isWeb && styles.webPointer,
-                  pressed && styles.pressedOpacity,
-                ]}
-              >
-                <Calendar size={18} color="#4F46E5" strokeWidth={2.2} />
-                <Text style={styles.optionLabel}>
-                  Reschedule (To {selectedTask?.dueDate === 'Today' ? 'Tomorrow' : 'Today'})
+                <RotateCcw size={18} color="#4F46E5" strokeWidth={2.2} />
+                <Text style={[styles.optionLabel, { color: theme.colors.textPrimary }]}>
+                  {selectedTask?.done ? 'Mark as Pending' : 'Mark as Completed'}
                 </Text>
               </Pressable>
 
@@ -1415,17 +1490,18 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
               onPress={() => setOptionsModalVisible(false)}
               style={({ pressed }) => [
                 styles.optionsCancelBtn,
+                { backgroundColor: theme.colors.cardAltBg },
                 isWeb && styles.webPointer,
                 pressed && styles.pressedOpacity,
               ]}
             >
-              <Text style={styles.optionsCancelText}>Close</Text>
+              <Text style={[styles.optionsCancelText, { color: theme.colors.textSecondary }]}>Close</Text>
             </Pressable>
           </View>
         </Pressable>
       </Modal>
 
-      {/* ==================== EDIT TASK MODAL ==================== */}
+      {/* ==================== 9. EDIT TASK MODAL ==================== */}
       <Modal
         visible={editModalVisible}
         transparent
@@ -1433,16 +1509,17 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
         onRequestClose={() => setEditModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
               <View>
                 <Text style={styles.modalKicker}>MODIFY TASK</Text>
-                <Text style={styles.modalTitle}>Edit Task Details</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Edit Task Details</Text>
               </View>
               <Pressable
                 onPress={() => setEditModalVisible(false)}
                 style={({ pressed }) => [
                   styles.modalCloseBtn,
+                  { backgroundColor: theme.colors.cardAltBg },
                   isWeb && styles.webPointer,
                   pressed && styles.pressedOpacity,
                 ]}
@@ -1453,10 +1530,11 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
 
             <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Task Title</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Task Title *</Text>
                 <TextInput
                   style={[
                     styles.modalInput,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
                     !!titleError && styles.modalInputError,
                     isWeb && styles.webOutlineNone,
                   ]}
@@ -1470,9 +1548,14 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
               </View>
 
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Description</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Description</Text>
                 <TextInput
-                  style={[styles.modalInput, styles.modalTextArea, isWeb && styles.webOutlineNone]}
+                  style={[
+                    styles.modalInput,
+                    styles.modalTextArea,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                    isWeb && styles.webOutlineNone,
+                  ]}
                   value={taskDescription}
                   onChangeText={setTaskDescription}
                   multiline
@@ -1480,59 +1563,90 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 />
               </View>
 
+              {/* Start Time */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Due Date</Text>
-                <View style={styles.modalChipRow}>
-                  {dateOptions.map((d) => (
-                    <Pressable
-                      key={d}
-                      onPress={() => setTaskDueDate(d)}
-                      style={[styles.modalChip, taskDueDate === d && styles.modalChipActive]}
-                    >
-                      <Text
-                        style={[
-                          styles.modalChipText,
-                          taskDueDate === d && styles.modalChipTextActive,
-                        ]}
-                      >
-                        {d}
-                      </Text>
-                    </Pressable>
-                  ))}
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Start Time</Text>
+                <View style={styles.timeInputRow}>
+                  <TextInput
+                    style={[
+                      styles.modalInput,
+                      styles.timeInputFlex,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                      isWeb && styles.webOutlineNone,
+                    ]}
+                    value={taskStartTime}
+                    onChangeText={setTaskStartTime}
+                    placeholder="e.g. 09:00 AM"
+                    placeholderTextColor="#94A3B8"
+                  />
+                  <Pressable
+                    onPress={() => handleOpenTimePicker('start')}
+                    style={({ pressed }) => [
+                      styles.clockIconBtn,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <Clock size={17} color="#4F46E5" strokeWidth={2.2} />
+                  </Pressable>
                 </View>
               </View>
 
+              {/* End Time */}
               <View style={styles.modalInputGroup}>
-                <Text style={styles.modalInputLabel}>Priority</Text>
-                <View style={styles.prioritySelectorRow}>
-                  {priorityOptions.map((p) => {
-                    const isSelected = taskPriority === p;
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>End Time</Text>
+                <View style={styles.timeInputRow}>
+                  <TextInput
+                    style={[
+                      styles.modalInput,
+                      styles.timeInputFlex,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                      isWeb && styles.webOutlineNone,
+                    ]}
+                    value={taskEndTime}
+                    onChangeText={setTaskEndTime}
+                    placeholder="e.g. 10:00 AM"
+                    placeholderTextColor="#94A3B8"
+                  />
+                  <Pressable
+                    onPress={() => handleOpenTimePicker('end')}
+                    style={({ pressed }) => [
+                      styles.clockIconBtn,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <Clock size={17} color="#4F46E5" strokeWidth={2.2} />
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Category */}
+              <View style={styles.modalInputGroup}>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Category</Text>
+                <View style={styles.modalChipRow}>
+                  {categoryOptions.map((c) => {
+                    const isCatSelected = taskCategory === c;
                     return (
                       <Pressable
-                        key={p}
-                        onPress={() => setTaskPriority(p)}
+                        key={c}
+                        onPress={() => setTaskCategory(c)}
                         style={[
-                          styles.prioritySelectBtn,
-                          isSelected && styles.prioritySelectBtnActive,
+                          styles.modalChip,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                          isCatSelected && styles.modalChipActive,
                         ]}
                       >
-                        <View
-                          style={[
-                            styles.prioritySelectDot,
-                            p === 'High'
-                              ? styles.dotHigh
-                              : p === 'Medium'
-                                ? styles.dotMedium
-                                : styles.dotLow,
-                          ]}
-                        />
                         <Text
                           style={[
-                            styles.prioritySelectText,
-                            isSelected && styles.prioritySelectTextActive,
+                            styles.modalChipText,
+                            { color: theme.colors.textSecondary },
+                            isCatSelected && styles.modalChipTextActive,
                           ]}
                         >
-                          {p}
+                          {c}
                         </Text>
                       </Pressable>
                     );
@@ -1540,22 +1654,42 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 </View>
               </View>
 
+              {/* Reminder Switch */}
+              <View style={[styles.reminderRow, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <View style={{ flex: 1, paddingRight: 8 }}>
+                  <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary, marginBottom: 2 }]}>
+                    Start Notification
+                  </Text>
+                  <Text style={[styles.reminderSubText, { color: theme.colors.textSecondary }]}>
+                    Receive an alert when this task starts
+                  </Text>
+                </View>
+                <Switch
+                  value={taskReminder}
+                  onValueChange={setTaskReminder}
+                  trackColor={{ false: '#CBD5E1', true: '#4F46E5' }}
+                  thumbColor="#FFFFFF"
+                />
+              </View>
+
               <View style={styles.modalActionsRow}>
                 <Pressable
                   onPress={() => setEditModalVisible(false)}
                   style={({ pressed }) => [
                     styles.modalCancelBtn,
+                    { backgroundColor: theme.colors.cardAltBg },
                     isWeb && styles.webPointer,
                     pressed && styles.pressedOpacity,
                   ]}
                 >
-                  <Text style={styles.modalCancelText}>Cancel</Text>
+                  <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
                 </Pressable>
 
                 <Pressable
                   onPress={handleSaveEditTask}
                   style={({ pressed }) => [
                     styles.modalSubmitBtn,
+                    { backgroundColor: '#4F46E5' },
                     isWeb && styles.webPointer,
                     pressed && styles.pressedOpacity,
                   ]}
@@ -1568,7 +1702,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
         </View>
       </Modal>
 
-      {/* ==================== NOTIFICATIONS MODAL ==================== */}
+      {/* ==================== 10. NOTIFICATIONS MODAL ==================== */}
       <Modal
         visible={notificationsModalVisible}
         transparent
@@ -1576,11 +1710,11 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
         onRequestClose={() => setNotificationsModalVisible(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { maxHeight: 560 }]}>
-            <View style={styles.modalHeader}>
+          <View style={[styles.modalCard, { backgroundColor: theme.colors.cardBg, maxHeight: 560, borderColor: theme.colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
               <View>
                 <Text style={styles.modalKicker}>NOTIFICATIONS & REMINDERS</Text>
-                <Text style={styles.modalTitle}>Activity Feed</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Activity Feed</Text>
               </View>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
                 {unreadNotificationCount > 0 && (
@@ -1595,6 +1729,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   onPress={() => setNotificationsModalVisible(false)}
                   style={({ pressed }) => [
                     styles.modalCloseBtn,
+                    { backgroundColor: theme.colors.cardAltBg },
                     isWeb && styles.webPointer,
                     pressed && styles.pressedOpacity,
                   ]}
@@ -1604,69 +1739,50 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
               </View>
             </View>
 
-            <ScrollView
-              style={{ maxHeight: 440, marginTop: 8 }}
-              showsVerticalScrollIndicator={false}
-            >
+            <ScrollView style={styles.modalScroll} showsVerticalScrollIndicator={false}>
               {notifications.length === 0 ? (
-                <View style={{ alignItems: 'center', paddingVertical: 36, gap: 8 }}>
-                  <Bell size={36} color="#94A3B8" strokeWidth={1.5} />
-                  <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '700' }}>No notifications</Text>
-                  <Text style={{ color: theme.colors.textSecondary, fontSize: 12, textAlign: 'center' }}>
-                    Reminders from tasks, calendar events, and medications will appear here.
+                <View style={{ paddingVertical: 40, alignItems: 'center' }}>
+                  <Bell size={28} color="#94A3B8" strokeWidth={1.5} />
+                  <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '700', marginTop: 8 }}>
+                    No notifications yet
+                  </Text>
+                  <Text style={{ color: theme.colors.textSecondary, fontSize: 12, marginTop: 4 }}>
+                    Task and schedule reminders will appear here.
                   </Text>
                 </View>
               ) : (
-                <View style={{ gap: 8 }}>
-                  {notifications.map((item) => (
-                    <Pressable
-                      key={item.id || item._id}
-                      onPress={() => handleMarkNotificationRead(item.id || item._id)}
-                      style={({ pressed }) => [
-                        {
-                          backgroundColor: item.read ? (isDarkMode ? '#1E293B' : '#F8FAFC') : (isDarkMode ? '#312E81' : '#EEF2FF'),
-                          borderColor: item.read ? (isDarkMode ? '#334155' : '#E2E8F0') : '#818CF8',
-                          borderWidth: 1,
-                          borderRadius: 14,
-                          padding: 12,
-                          flexDirection: 'row',
-                          alignItems: 'flex-start',
-                          justifyContent: 'space-between',
-                          gap: 10,
-                        },
-                        isWeb && styles.webPointer,
-                        pressed && styles.pressedOpacity,
-                      ]}
-                    >
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                          {!item.read && (
-                            <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#4F46E5' }} />
-                          )}
-                          <Text style={{ color: isDarkMode ? '#F8FAFC' : '#0F172A', fontSize: 13, fontWeight: '700' }}>
-                            {item.title}
-                          </Text>
-                        </View>
-                        <Text style={{ color: isDarkMode ? '#94A3B8' : '#64748B', fontSize: 12, marginTop: 2, lineHeight: 16 }}>
-                          {item.message}
-                        </Text>
-                        <Text style={{ color: isDarkMode ? '#64748B' : '#94A3B8', fontSize: 10, marginTop: 4 }}>
-                          {item.createdAt ? new Date(item.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Today'}
-                        </Text>
-                      </View>
-
+                <View style={{ gap: 8, paddingBottom: 16 }}>
+                  {notifications.map((item) => {
+                    const itemId = item._id || item.id;
+                    return (
                       <Pressable
-                        onPress={(e) => {
-                          e?.stopPropagation?.();
-                          handleDeleteNotification(item.id || item._id);
-                        }}
-                        hitSlop={8}
-                        style={{ padding: 4 }}
+                        key={itemId}
+                        onPress={() => !item.read && handleMarkNotificationRead(itemId)}
+                        style={[
+                          styles.notificationCard,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                          !item.read && { borderColor: '#818CF8', backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.15)' : '#F5F3FF' },
+                        ]}
                       >
-                        <X size={14} color="#94A3B8" strokeWidth={2.2} />
+                        <View style={{ flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                          <View style={{ flex: 1, paddingRight: 8 }}>
+                            <Text style={[styles.notificationTitle, { color: theme.colors.textPrimary }, !item.read && { fontWeight: '800', color: '#4F46E5' }]}>
+                              {item.title}
+                            </Text>
+                            <Text style={[styles.notificationMessage, { color: theme.colors.textSecondary }]}>
+                              {item.message}
+                            </Text>
+                          </View>
+                          <Pressable
+                            onPress={() => handleDeleteNotification(itemId)}
+                            style={{ padding: 4 }}
+                          >
+                            <X size={13} color="#94A3B8" strokeWidth={2.2} />
+                          </Pressable>
+                        </View>
                       </Pressable>
-                    </Pressable>
-                  ))}
+                    );
+                  })}
                 </View>
               )}
             </ScrollView>
@@ -1695,220 +1811,188 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#0A0E1A',
-  },
-  mainWrapper: {
-    flex: 1,
-    backgroundColor: '#0A0E1A',
-    position: 'relative',
+    backgroundColor: '#090D16',
   },
   desktopOuterContainer: {
     flex: 1,
-    backgroundColor: '#05070D',
+    backgroundColor: '#05070B',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 24,
-    paddingHorizontal: 16,
   },
   desktopShell: {
     width: '100%',
-    maxWidth: 440,
+    maxWidth: 480,
     height: '100%',
-    maxHeight: 880,
+    maxHeight: 920,
     borderRadius: 32,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.25)',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.2,
-    shadowRadius: 28,
+    borderColor: '#1E293B',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
     elevation: 12,
-    backgroundColor: '#0A0E1A',
+  },
+  mainWrapper: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
   },
   scrollContainer: {
     flex: 1,
-    backgroundColor: '#0A0E1A',
+    backgroundColor: '#090D16',
   },
   scrollContentContainer: {
-    flexGrow: 1,
+    paddingBottom: 90,
     backgroundColor: '#F8FAFC',
-    paddingBottom: 24,
   },
 
-  /* 1. HEADER HERO */
+  /* HEADER */
   headerHero: {
-    backgroundColor: '#0F172A',
-    paddingHorizontal: 22,
+    backgroundColor: '#090D16',
+    paddingHorizontal: 20,
     paddingTop: 16,
-    paddingBottom: 36,
-    overflow: 'hidden',
+    paddingBottom: 22,
     position: 'relative',
+    overflow: 'hidden',
   },
   headerTopRow: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
     justifyContent: 'space-between',
-    zIndex: 2,
+    alignItems: 'flex-start',
   },
   headerKicker: {
     color: '#818CF8',
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 1.4,
-    marginBottom: 4,
+    marginBottom: 3,
   },
   headerTitle: {
     color: '#F8FAFC',
-    fontSize: 32,
-    fontWeight: '800',
-    letterSpacing: -1,
+    fontSize: 26,
+    fontWeight: '900',
+    letterSpacing: -0.6,
   },
   headerSubtitle: {
     color: '#94A3B8',
-    fontSize: 13,
-    marginTop: 4,
-    maxWidth: 240,
+    fontSize: 12.5,
+    marginTop: 2,
   },
   headerActionRow: {
     flexDirection: 'row',
-    alignItems: 'center',
     gap: 8,
+    alignItems: 'center',
   },
   headerIconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     backgroundColor: '#1E293B',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: '#334155',
     position: 'relative',
   },
   headerIconBtnActive: {
-    backgroundColor: 'rgba(99, 102, 241, 0.35)',
-    borderColor: '#818CF8',
-  },
-  headerIconText: {
-    fontSize: 16,
+    backgroundColor: '#312E81',
+    borderColor: '#6366F1',
   },
   notificationDot: {
     position: 'absolute',
-    top: 8,
-    right: 9,
+    top: 7,
+    right: 7,
     width: 7,
     height: 7,
     borderRadius: 4,
-    backgroundColor: '#6366F1',
-    borderWidth: 1.5,
-    borderColor: '#1E293B',
+    backgroundColor: '#EF4444',
   },
-
   dateRow: {
-    marginTop: 18,
-    zIndex: 2,
+    marginTop: 14,
+    flexDirection: 'row',
   },
   dateBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: 'rgba(30, 41, 59, 0.85)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
+    gap: 6,
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
     borderWidth: 1,
     borderColor: 'rgba(99, 102, 241, 0.3)',
-    gap: 6,
-  },
-  dateIcon: {
-    fontSize: 13,
   },
   dateText: {
-    color: '#E2E8F0',
-    fontSize: 12,
+    color: '#E0E7FF',
+    fontSize: 11.5,
     fontWeight: '700',
   },
-
   searchBarContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#1E293B',
-    borderRadius: 14,
+    borderRadius: 12,
     paddingHorizontal: 12,
-    marginTop: 16,
+    paddingVertical: 8,
+    marginTop: 14,
     borderWidth: 1,
-    borderColor: '#818CF8',
-    zIndex: 2,
-    height: 44,
-  },
-  searchInnerIcon: {
-    fontSize: 14,
-    marginRight: 8,
+    borderColor: '#334155',
+    gap: 8,
   },
   searchInput: {
     flex: 1,
     color: '#F8FAFC',
-    fontSize: 13.5,
+    fontSize: 13,
+    padding: 0,
   },
   searchClearBtn: {
-    padding: 4,
+    padding: 2,
   },
-  searchClearText: {
-    color: '#94A3B8',
-    fontSize: 13,
-    fontWeight: '700',
-  },
-
   orbGreen: {
-    backgroundColor: '#4338CA',
-    borderRadius: 160,
-    height: 220,
-    opacity: 0.35,
     position: 'absolute',
-    right: -80,
-    top: -20,
-    width: 220,
+    top: -40,
+    right: -40,
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(214, 239, 144, 0.08)',
   },
   orbBlue: {
-    backgroundColor: '#0284C7',
-    borderRadius: 50,
-    bottom: 10,
-    height: 20,
-    opacity: 0.6,
     position: 'absolute',
-    right: 60,
-    width: 20,
+    bottom: -50,
+    left: -30,
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
   },
 
-  /* MAIN SHEET */
+  /* SHEET CONTENT */
   sheetContent: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
     backgroundColor: '#F8FAFC',
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    marginTop: -20,
-    paddingHorizontal: 18,
-    paddingTop: 18,
   },
 
-  /* 2. DAILY TASK SUMMARY CARD */
+  /* SUMMARY CARD */
   summaryCard: {
     backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    padding: 18,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
     shadowColor: '#0F172A',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
+    shadowOpacity: 0.06,
+    shadowRadius: 10,
     elevation: 3,
-    marginBottom: 16,
   },
   summaryTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     marginBottom: 12,
   },
   summaryKicker: {
@@ -1919,377 +2003,129 @@ const styles = StyleSheet.create({
   },
   summaryTitle: {
     color: '#0F172A',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
-    letterSpacing: -0.4,
-    marginTop: 2,
+    letterSpacing: -0.3,
+    marginTop: 1,
   },
   progressPercentBadge: {
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 12,
-    paddingVertical: 5,
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
   },
   progressPercentText: {
     color: '#4F46E5',
-    fontSize: 16,
-    fontWeight: '800',
+    fontSize: 13,
+    fontWeight: '900',
   },
-
   progressBarTrack: {
-    height: 8,
-    backgroundColor: '#EEF2FF',
+    height: 7,
+    backgroundColor: '#F1F5F9',
     borderRadius: 4,
     overflow: 'hidden',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   progressBarFill: {
     height: '100%',
     backgroundColor: '#4F46E5',
     borderRadius: 4,
   },
-
   summaryFooterRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
   },
   summaryCountText: {
-    color: '#475569',
-    fontSize: 12.5,
+    color: '#64748B',
+    fontSize: 11.5,
   },
   summaryCountBold: {
     fontWeight: '800',
     color: '#0F172A',
   },
   summaryMotivationalText: {
-    color: '#4F46E5',
-    fontSize: 11.5,
+    color: '#6366F1',
+    fontSize: 11,
     fontWeight: '700',
+    maxWidth: '55%',
+    textAlign: 'right',
   },
 
-  /* 3. TASK FILTERS */
+  /* FILTERS */
   filtersScrollWrapper: {
-    marginBottom: 16,
+    marginBottom: 14,
   },
   filtersRow: {
     flexDirection: 'row',
     gap: 8,
-    paddingVertical: 2,
   },
   filterPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
   },
   filterPillActive: {
     backgroundColor: '#0F172A',
-    borderWidth: 1,
-    borderColor: 'rgba(99, 102, 241, 0.5)',
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
-    elevation: 2,
+    borderColor: '#0F172A',
   },
   filterPillInactive: {
     backgroundColor: '#FFFFFF',
-    borderWidth: 1,
     borderColor: '#E2E8F0',
   },
   filterPillText: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
   },
   filterPillTextActive: {
-    color: '#F8FAFC',
+    color: '#FFFFFF',
   },
   filterPillTextInactive: {
-    color: '#475569',
-  },
-  pillBadge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 10,
-  },
-  pillBadgeActive: {
-    backgroundColor: 'rgba(99, 102, 241, 0.3)',
-  },
-  pillBadgeInactive: {
-    backgroundColor: '#F1F5F9',
-  },
-  pillBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  pillBadgeTextActive: {
-    color: '#A5B4FC',
-  },
-  pillBadgeTextInactive: {
     color: '#64748B',
   },
 
-  /* 4. PRIORITY SECTION */
-  prioritySection: {
-    marginBottom: 18,
+  /* TASK LIST SECTION */
+  taskListSection: {
+    marginBottom: 16,
   },
   sectionHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-end',
     marginBottom: 10,
   },
   sectionSubTitle: {
     color: '#6366F1',
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: '800',
-    letterSpacing: 1.2,
+    letterSpacing: 1.1,
   },
   sectionMainTitle: {
     color: '#0F172A',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '800',
-    letterSpacing: -0.4,
-    marginTop: 2,
-  },
-  clearFilterText: {
-    color: '#4F46E5',
-    fontSize: 11.5,
-    fontWeight: '700',
-  },
-  priorityGrid: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  priorityCard: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 14,
-    paddingHorizontal: 10,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.03,
-    shadowRadius: 6,
-    elevation: 1,
-  },
-  priorityCardActive: {
-    borderColor: '#6366F1',
-    backgroundColor: '#EEF2FF',
-  },
-  priorityCardLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-  },
-  priorityIndicatorDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-  },
-  dotHigh: { backgroundColor: '#EF4444' },
-  dotMedium: { backgroundColor: '#F59E0B' },
-  dotLow: { backgroundColor: '#6366F1' },
-  priorityLabel: {
-    color: '#334155',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  priorityCount: {
-    fontSize: 13,
-    fontWeight: '800',
-  },
-  countHigh: { color: '#DC2626' },
-  countMedium: { color: '#D97706' },
-  countLow: { color: '#4F46E5' },
-
-  /* 5. TASK LIST */
-  clearFilterRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  taskListSection: {
-    marginBottom: 20,
+    letterSpacing: -0.3,
+    marginTop: 1,
   },
   quickAddHeaderBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#EEF2FF',
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
     paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
+    paddingVertical: 5,
+    borderRadius: 10,
   },
   quickAddHeaderText: {
     color: '#4F46E5',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '800',
   },
   tasksListContainer: {
-    gap: 10,
-  },
-  taskCard: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    shadowColor: '#0F172A',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  taskCardCompleted: {
-    backgroundColor: '#F8FAFC',
-    borderColor: '#E2E8F0',
-    opacity: 0.8,
-  },
-
-  checkboxContainer: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 2,
-    borderColor: '#94A3B8',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-    marginTop: 2,
-    backgroundColor: '#FFFFFF',
-  },
-  checkboxContainerActive: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4F46E5',
-  },
-  checkboxCheckmark: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '800',
-  },
-
-  taskBody: {
-    flex: 1,
-  },
-  taskTitleText: {
-    color: '#0F172A',
-    fontSize: 14.5,
-    fontWeight: '700',
-    letterSpacing: -0.2,
-    lineHeight: 20,
-  },
-  taskTitleTextDone: {
-    color: '#94A3B8',
-    textDecorationLine: 'line-through',
-  },
-  taskDescriptionText: {
-    color: '#64748B',
-    fontSize: 12,
-    marginTop: 3,
-    lineHeight: 16,
-  },
-  taskDescriptionTextDone: {
-    color: '#CBD5E1',
-    textDecorationLine: 'line-through',
-  },
-
-  taskMetaRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 8,
-  },
-  timeBadgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  taskTimeBadge: {
-    color: '#64748B',
-    fontSize: 11,
-    fontWeight: '600',
-  },
-
-  priorityBadge: {
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  badgeHigh: { backgroundColor: '#FEE2E2' },
-  badgeMedium: { backgroundColor: '#FEF3C7' },
-  badgeLow: { backgroundColor: '#EEF2FF' },
-  priorityBadgeText: {
-    fontSize: 10,
-    fontWeight: '800',
-  },
-  badgeTextHigh: { color: '#B91C1C' },
-  badgeTextMedium: { color: '#B45309' },
-  badgeTextLow: { color: '#4F46E5' },
-
-  categoryBadge: {
-    backgroundColor: '#F1F5F9',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  categoryBadgeText: {
-    color: '#475569',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-
-  dueDateBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: '#EEF2FF',
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  dueDateBadgeText: {
-    color: '#4F46E5',
-    fontSize: 10,
-    fontWeight: '700',
-  },
-
-  threeDotBtn: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    marginLeft: 4,
-  },
-  threeDotText: {
-    color: '#94A3B8',
-    fontSize: 18,
-    fontWeight: '800',
-  },
-
-  /* 9. UPCOMING SECTION */
-  upcomingSection: {
-    marginBottom: 20,
-  },
-  upcomingList: {
     gap: 8,
   },
-  upcomingCard: {
+  taskCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFFFFF',
@@ -2297,106 +2133,192 @@ const styles = StyleSheet.create({
     padding: 12,
     borderWidth: 1,
     borderColor: '#E2E8F0',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
   },
-  upcomingDateColumn: {
-    minWidth: 72,
-    borderRightWidth: 1,
-    borderRightColor: '#F1F5F9',
-    paddingRight: 8,
+  taskCardCompleted: {
+    backgroundColor: '#F8FAFC',
+    opacity: 0.88,
+  },
+  checkboxContainer: {
+    width: 22,
+    height: 22,
+    borderRadius: 7,
+    borderWidth: 1.5,
+    borderColor: '#94A3B8',
+    alignItems: 'center',
+    justifyContent: 'center',
     marginRight: 10,
   },
-  upcomingDateLabel: {
-    color: '#0F172A',
-    fontSize: 12,
-    fontWeight: '800',
+  checkboxContainerActive: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#4F46E5',
   },
-  upcomingTimeLabel: {
-    color: '#64748B',
-    fontSize: 10.5,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  upcomingContentColumn: {
+  taskBody: {
     flex: 1,
+    paddingRight: 6,
   },
-  upcomingTaskTitle: {
-    color: '#1E293B',
+  taskTitleText: {
+    color: '#0F172A',
     fontSize: 13.5,
     fontWeight: '700',
   },
-  upcomingMetaRow: {
+  taskTitleTextDone: {
+    color: '#94A3B8',
+    textDecorationLine: 'line-through',
+  },
+  taskDescriptionText: {
+    color: '#64748B',
+    fontSize: 11.5,
+    marginTop: 2,
+  },
+  taskDescriptionTextDone: {
+    color: '#94A3B8',
+    textDecorationLine: 'line-through',
+  },
+  taskMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginTop: 6,
+    flexWrap: 'wrap',
+  },
+  timeBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginTop: 2,
+    backgroundColor: 'rgba(99, 102, 241, 0.09)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
   },
-  upcomingCategoryText: {
-    color: '#64748B',
+  taskTimeBadge: {
+    color: '#4F46E5',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  categoryBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  categoryBadgeText: {
+    color: '#475569',
     fontSize: 10.5,
     fontWeight: '600',
   },
-  upcomingDot: {
-    color: '#CBD5E1',
-    fontSize: 10,
-  },
-  upcomingPriorityText: {
+  completedTimestampText: {
+    color: '#10B981',
     fontSize: 10.5,
     fontWeight: '700',
   },
-  upcomingCheckBtn: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginLeft: 8,
+  threeDotBtn: {
+    padding: 6,
   },
-  upcomingCheckText: {
+  quickCompletedActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+  undoMiniBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  undoMiniText: {
+    fontSize: 11,
+    fontWeight: '800',
     color: '#4F46E5',
-    fontSize: 13,
-    fontWeight: '700',
+  },
+  editMiniBtn: {
+    padding: 5,
+    borderRadius: 8,
+    borderWidth: 1,
   },
 
-  /* 10. COMPLETED SECTION */
+  /* EMPTY STATE */
+  emptyStateBox: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 18,
+    padding: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  emptyStateIconCircle: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 8,
+  },
+  emptyStateTitle: {
+    color: '#0F172A',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  emptyStateDesc: {
+    color: '#64748B',
+    fontSize: 12,
+    marginTop: 2,
+    marginBottom: 12,
+  },
+  emptyStateActionBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+  },
+  emptyStateActionText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+
+  /* COMPLETED SECTION */
   completedSection: {
-    marginBottom: 16,
+    marginTop: 8,
   },
   completedList: {
-    gap: 8,
+    gap: 6,
   },
   completedCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: '#F8FAFC',
     borderRadius: 14,
-    padding: 12,
+    padding: 10,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    opacity: 0.85,
   },
   completedCheckIconCircle: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#EEF2FF',
-    borderWidth: 1.5,
-    borderColor: '#818CF8',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,
   },
-  completedCheckMark: {
-    color: '#4F46E5',
-    fontSize: 12,
-    fontWeight: '800',
-  },
   completedTextWrapper: {
     flex: 1,
+    paddingRight: 6,
   },
   completedTaskTitle: {
-    color: '#64748B',
-    fontSize: 13,
+    color: '#475569',
+    fontSize: 12.5,
     fontWeight: '600',
     textDecorationLine: 'line-through',
   },
@@ -2406,119 +2328,29 @@ const styles = StyleSheet.create({
     marginTop: 1,
   },
 
-  /* 11. EMPTY STATE */
-  emptyStateBox: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 20,
-    padding: 28,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-  },
-  emptyStateIconCircle: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
-    backgroundColor: '#EEF2FF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: '#C7D2FE',
-  },
-  emptyStateIcon: {
-    fontSize: 24,
-  },
-  emptyStateTitle: {
-    color: '#0F172A',
-    fontSize: 17,
-    fontWeight: '800',
-  },
-  emptyStateDesc: {
-    color: '#64748B',
-    fontSize: 13,
-    marginTop: 4,
-    marginBottom: 16,
-  },
-  emptyStateActionBtn: {
-    backgroundColor: '#4F46E5',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 14,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  emptyStateActionText: {
-    color: '#FFFFFF',
-    fontSize: 13.5,
-    fontWeight: '700',
-  },
-
-  /* 7. FLOATING ACTION BUTTON */
-  fabButton: {
-    position: 'absolute',
-    right: 20,
-    bottom: 96,
-    backgroundColor: '#4F46E5', // HumanOS signature primary indigo
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 18,
-    borderRadius: 28,
-    shadowColor: '#4F46E5',
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.35,
-    shadowRadius: 12,
-    elevation: 8,
-    gap: 6,
-    zIndex: 99,
-  },
-  fabPressed: {
-    opacity: 0.9,
-    transform: [{ scale: 0.96 }],
-  },
-  fabIcon: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: '800',
-    marginTop: -1,
-  },
-  fabLabel: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.2,
-  },
-
   /* MODALS */
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    backgroundColor: 'rgba(15, 23, 42, 0.65)',
     justifyContent: 'flex-end',
   },
   modalCard: {
     backgroundColor: '#FFFFFF',
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
-    paddingHorizontal: 22,
-    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingTop: 18,
     paddingBottom: Platform.OS === 'ios' ? 36 : 24,
     maxHeight: '90%',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 16,
-    paddingBottom: 12,
+    marginBottom: 14,
+    paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
@@ -2530,9 +2362,9 @@ const styles = StyleSheet.create({
   },
   modalTitle: {
     color: '#0F172A',
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '800',
-    letterSpacing: -0.5,
+    letterSpacing: -0.3,
     marginTop: 2,
   },
   modalCloseBtn: {
@@ -2543,20 +2375,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  modalCloseText: {
-    color: '#64748B',
-    fontSize: 14,
-    fontWeight: '800',
-  },
   modalScroll: {
-    maxHeight: 480,
+    maxHeight: 460,
   },
-
   modalInputGroup: {
     marginBottom: 14,
   },
   modalInputLabel: {
-    color: '#1E293B',
+    color: '#0F172A',
     fontSize: 12.5,
     fontWeight: '700',
     marginBottom: 6,
@@ -2571,24 +2397,41 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    fontSize: 14,
+    fontSize: 13.5,
     color: '#0F172A',
   },
   modalInputError: {
     borderColor: '#EF4444',
     backgroundColor: '#FEF2F2',
   },
+  modalErrorText: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontWeight: '600',
+    marginTop: 4,
+  },
   modalTextArea: {
     minHeight: 70,
     textAlignVertical: 'top',
   },
-  modalErrorText: {
-    color: '#EF4444',
-    fontSize: 11.5,
-    fontWeight: '600',
-    marginTop: 4,
+  timeInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-
+  timeInputFlex: {
+    flex: 1,
+  },
+  clockIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   modalChipRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -2603,54 +2446,18 @@ const styles = StyleSheet.create({
     borderColor: '#E2E8F0',
   },
   modalChipActive: {
-    backgroundColor: '#4F46E5',
-    borderColor: '#4F46E5',
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
   },
   modalChipText: {
     color: '#475569',
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: '600',
   },
   modalChipTextActive: {
     color: '#FFFFFF',
-    fontWeight: '700',
-  },
-
-  prioritySelectorRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  prioritySelectBtn: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#E2E8F0',
-    backgroundColor: '#F8FAFC',
-  },
-  prioritySelectBtnActive: {
-    borderColor: '#4F46E5',
-    backgroundColor: '#EEF2FF',
-  },
-  prioritySelectDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  prioritySelectText: {
-    fontSize: 12.5,
-    fontWeight: '700',
-    color: '#475569',
-  },
-  prioritySelectTextActive: {
-    color: '#4F46E5',
     fontWeight: '800',
   },
-
   reminderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -2660,39 +2467,38 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     borderWidth: 1,
     borderColor: '#E2E8F0',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   reminderSubText: {
     color: '#64748B',
     fontSize: 11,
-    marginTop: 2,
+    marginTop: 1,
   },
-
   modalActionsRow: {
     flexDirection: 'row',
     gap: 10,
-    paddingTop: 8,
+    paddingTop: 6,
     paddingBottom: 16,
   },
   modalCancelBtn: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 16,
+    paddingVertical: 13,
+    borderRadius: 14,
     backgroundColor: '#F1F5F9',
   },
   modalCancelText: {
     color: '#64748B',
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '700',
   },
   modalSubmitBtn: {
     flex: 2,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 16,
+    paddingVertical: 13,
+    borderRadius: 14,
     backgroundColor: '#4F46E5',
     shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
@@ -2702,11 +2508,214 @@ const styles = StyleSheet.create({
   },
   modalSubmitText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '800',
   },
 
-  /* 12. TASK OPTIONS BOTTOM SHEET */
+  /* CLOCK & TIME PICKER MODAL STYLES */
+  timePickerModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+    marginHorizontal: 20,
+    marginBottom: 'auto',
+    marginTop: 'auto',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+    maxWidth: 380,
+    alignSelf: 'center',
+    width: '92%',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  clockDigitalDisplay: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 12,
+    marginBottom: 10,
+  },
+  clockDigitsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  clockDigitBox: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+    minWidth: 58,
+  },
+  clockDigitBoxActive: {
+    borderColor: '#4F46E5',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  clockDigitText: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  clockDigitTextActive: {
+    color: '#4F46E5',
+  },
+  clockDigitSub: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  clockDigitSubActive: {
+    color: '#4F46E5',
+  },
+  clockColon: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  clockAmPmContainer: {
+    flexDirection: 'column',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 2,
+  },
+  clockAmPmBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9,
+    alignItems: 'center',
+  },
+  clockAmPmBtnActive: {
+    backgroundColor: '#4F46E5',
+  },
+  clockAmPmText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748B',
+  },
+  clockAmPmTextActive: {
+    color: '#FFFFFF',
+  },
+  clockModeTabsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  clockModeTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  clockModeTabActive: {
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
+  },
+  clockModeTabText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  clockModeTabTextActive: {
+    color: '#FFFFFF',
+  },
+  clockGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    gap: 6,
+    marginBottom: 8,
+  },
+  clockCell: {
+    width: 44,
+    height: 40,
+    borderRadius: 11,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clockCellSelected: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#4F46E5',
+  },
+  clockCellText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  clockCellTextSelected: {
+    color: '#FFFFFF',
+  },
+  minuteAdjustRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingHorizontal: 4,
+  },
+  minuteAdjustBtn: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  minuteAdjustBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  minuteAdjustLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  clockQuickPresetsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    justifyContent: 'center',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  clockPresetChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  clockPresetChipText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  clockActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
+  },
+
+  /* TASK OPTIONS SHEET */
   optionsModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(15, 23, 42, 0.65)',
@@ -2730,9 +2739,9 @@ const styles = StyleSheet.create({
   },
   optionsTaskTitle: {
     color: '#0F172A',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
-    marginBottom: 14,
+    marginBottom: 12,
     paddingBottom: 10,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
@@ -2752,17 +2761,14 @@ const styles = StyleSheet.create({
   optionRowDestructive: {
     backgroundColor: '#FEF2F2',
   },
-  optionIcon: {
-    fontSize: 16,
-  },
   optionLabel: {
     color: '#1E293B',
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '600',
   },
   optionLabelDestructive: {
     color: '#DC2626',
-    fontSize: 14,
+    fontSize: 13.5,
     fontWeight: '700',
   },
   optionsCancelBtn: {
@@ -2773,8 +2779,28 @@ const styles = StyleSheet.create({
   },
   optionsCancelText: {
     color: '#475569',
-    fontSize: 13.5,
+    fontSize: 13,
     fontWeight: '700',
+  },
+
+  /* NOTIFICATIONS CARD */
+  notificationCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  notificationTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 2,
+  },
+  notificationMessage: {
+    fontSize: 11.5,
+    color: '#64748B',
+    lineHeight: 16,
   },
 
   /* TOAST NOTICE */
@@ -2789,6 +2815,9 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     zIndex: 999,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     shadowColor: '#4F46E5',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,

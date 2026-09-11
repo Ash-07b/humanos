@@ -31,6 +31,10 @@ import {
   X,
   Clock,
   Trash2,
+  Calendar,
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -145,8 +149,22 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
   const [medFrequency, setMedFrequency] = useState('Once daily');
   const [medStartDate, setMedStartDate] = useState('Today');
   const [medEndDate, setMedEndDate] = useState('Ongoing');
-  const [medReminderTime, setMedReminderTime] = useState('08:00 AM');
+  const [medReminderTime, setMedReminderTime] = useState('');
+  const [medReminderTimes, setMedReminderTimes] = useState(['']);
   const [medInstructions, setMedInstructions] = useState('');
+
+  // Calendar Modal State for Medication Start/End Dates
+  const [calendarModalVisible, setCalendarModalVisible] = useState(false);
+  const [calendarTargetField, setCalendarTargetField] = useState('start'); // 'start' | 'end'
+  const [calendarViewDate, setCalendarViewDate] = useState(new Date());
+
+  // Interactive Clock / Time Picker Modal State
+  const [timePickerModalVisible, setTimePickerModalVisible] = useState(false);
+  const [timePickerTargetIndex, setTimePickerTargetIndex] = useState(0);
+  const [pickerHour, setPickerHour] = useState(8);
+  const [pickerMinute, setPickerMinute] = useState(0);
+  const [pickerPeriod, setPickerPeriod] = useState('AM'); // 'AM' | 'PM'
+  const [pickerMode, setPickerMode] = useState('hour'); // 'hour' | 'minute'
 
   const recordTypes = [
     { type: 'Heart Rate', icon: HeartPulse, defaultUnit: 'bpm', iconBg: '#FFE4E6', iconColor: '#E11D48' },
@@ -171,6 +189,91 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
     'Weekly',
     'As needed',
   ];
+
+  const handleFrequencySelect = (freq) => {
+    setMedFrequency(freq);
+    setMedReminderTimes((prev) => {
+      const times = [...prev];
+      if (freq === 'Twice daily') {
+        while (times.length < 2) times.push('');
+      } else if (freq === 'Three times daily') {
+        while (times.length < 3) times.push('');
+      } else if (times.length === 0) {
+        times.push('');
+      }
+      return times;
+    });
+  };
+
+  const handleOpenCalendar = (field) => {
+    setCalendarTargetField(field);
+    setCalendarViewDate(new Date());
+    setCalendarModalVisible(true);
+  };
+
+  const handleSelectCalendarDate = (dateStr) => {
+    if (calendarTargetField === 'start') {
+      setMedStartDate(dateStr);
+    } else {
+      setMedEndDate(dateStr);
+    }
+    setCalendarModalVisible(false);
+  };
+
+  const handleReminderTimeChange = (index, value) => {
+    setMedReminderTimes((prev) => {
+      const updated = [...prev];
+      updated[index] = value;
+      return updated;
+    });
+  };
+
+  const handleAddReminderTimeSlot = () => {
+    setMedReminderTimes((prev) => [...prev, '']);
+  };
+
+  const handleRemoveReminderTimeSlot = (index) => {
+    setMedReminderTimes((prev) => {
+      if (prev.length <= 1) return [''];
+      return prev.filter((_, i) => i !== index);
+    });
+  };
+
+  const handleOpenTimePicker = (index) => {
+    setTimePickerTargetIndex(index);
+    const currentTime = medReminderTimes[index] || '';
+    const match = currentTime.trim().match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+    if (match) {
+      let h = parseInt(match[1], 10);
+      let p = (match[3] || 'AM').toUpperCase();
+      if (h > 12) {
+        h = h - 12;
+        p = 'PM';
+      }
+      setPickerHour(h === 0 ? 12 : h);
+      setPickerMinute(parseInt(match[2], 10) || 0);
+      setPickerPeriod(p);
+    } else {
+      const now = new Date();
+      let h = now.getHours();
+      const p = h >= 12 ? 'PM' : 'AM';
+      h = h % 12 || 12;
+      const m = Math.floor(now.getMinutes() / 5) * 5;
+      setPickerHour(h);
+      setPickerMinute(m);
+      setPickerPeriod(p);
+    }
+    setPickerMode('hour');
+    setTimePickerModalVisible(true);
+  };
+
+  const handleApplyTimePicker = () => {
+    const formattedHour = String(pickerHour).padStart(2, '0');
+    const formattedMin = String(pickerMinute).padStart(2, '0');
+    const formattedTime = `${formattedHour}:${formattedMin} ${pickerPeriod}`;
+    handleReminderTimeChange(timePickerTargetIndex, formattedTime);
+    setTimePickerModalVisible(false);
+  };
 
   const showNotice = (msg) => {
     setNoticeMessage(msg);
@@ -298,7 +401,16 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
       setMedFrequency(medToEdit.frequency || 'Once daily');
       setMedStartDate(medToEdit.startDate || 'Today');
       setMedEndDate(medToEdit.endDate || 'Ongoing');
-      setMedReminderTime(medToEdit.reminderTime || '08:00 AM');
+
+      let initialTimes = [];
+      if (Array.isArray(medToEdit.reminderTimes) && medToEdit.reminderTimes.length > 0) {
+        initialTimes = medToEdit.reminderTimes.filter(Boolean);
+      } else if (medToEdit.reminderTime) {
+        initialTimes = medToEdit.reminderTime.split(',').map((s) => s.trim()).filter(Boolean);
+      }
+      if (initialTimes.length === 0) initialTimes = [''];
+      setMedReminderTimes(initialTimes);
+      setMedReminderTime(medToEdit.reminderTime || '');
       setMedInstructions(medToEdit.instructions || '');
     } else {
       setEditingMedication(null);
@@ -307,7 +419,8 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
       setMedFrequency('Once daily');
       setMedStartDate('Today');
       setMedEndDate('Ongoing');
-      setMedReminderTime('08:00 AM');
+      setMedReminderTimes(['']);
+      setMedReminderTime('');
       setMedInstructions('');
     }
     setMedicationModalVisible(true);
@@ -320,16 +433,27 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
       return;
     }
 
+    const cleanTimes = medReminderTimes
+      .map((t) => (typeof t === 'string' ? t.trim() : ''))
+      .filter(Boolean);
+
+    const combinedReminderTime = cleanTimes.length > 0
+      ? cleanTimes.join(', ')
+      : (medReminderTime.trim() || '');
+
     const payload = {
       name: medName.trim(),
       dosage: medDosage.trim(),
       frequency: medFrequency,
       startDate: medStartDate.trim() || 'Today',
       endDate: medEndDate.trim() || 'Ongoing',
-      reminderTime: medReminderTime.trim() || '08:00 AM',
+      reminderTime: combinedReminderTime,
+      reminderTimes: cleanTimes,
       status: 'Active',
       instructions: medInstructions.trim() || 'Take as prescribed',
     };
+
+    const timeNotice = combinedReminderTime ? ` • Reminder set for ${combinedReminderTime}` : '';
 
     try {
       const token = await getToken();
@@ -338,7 +462,7 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
         setMedications((prev) =>
           prev.map((m) => ((m.id === idToUpdate || m._id === idToUpdate) ? { ...m, ...payload } : m))
         );
-        showNotice(`Updated ${medName.trim()}`);
+        showNotice(`Updated ${medName.trim()}${timeNotice}`);
 
         if (token) {
           const res = await updateMedication(idToUpdate, payload, token);
@@ -354,7 +478,7 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
           ...payload,
         };
         setMedications((prev) => [tempMed, ...prev]);
-        showNotice(`Added ${medName.trim()}`);
+        showNotice(`Added ${medName.trim()}${timeNotice}`);
 
         if (token) {
           const res = await createMedication(payload, token);
@@ -367,7 +491,7 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
       }
     } catch (e) {
       console.log('Error saving medication:', e);
-      showNotice(`Added ${medName.trim()}`);
+      showNotice(`Added ${medName.trim()}${timeNotice}`);
     }
 
     setMedicationModalVisible(false);
@@ -913,15 +1037,22 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                     </View>
 
                     <View style={styles.medFooterRow}>
-                      <View style={[styles.medTimeBadge, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF' }]}>
-                        <Clock size={11} color="#6366F1" strokeWidth={2.2} />
-                        <Text style={[styles.medTimeText, { color: isDarkMode ? '#C7D2FE' : '#4F46E5' }]}>
-                          {med.reminderTime}
-                        </Text>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap', flex: 1 }}>
+                        <View style={[styles.medTimeBadge, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.2)' : '#EEF2FF' }]}>
+                          <Clock size={11} color="#6366F1" strokeWidth={2.2} />
+                          <Text style={[styles.medTimeText, { color: isDarkMode ? '#C7D2FE' : '#4F46E5' }]}>
+                            {med.reminderTime || (Array.isArray(med.reminderTimes) && med.reminderTimes.length > 0 ? med.reminderTimes.join(', ') : 'No time set')}
+                          </Text>
+                        </View>
+                        {(med.startDate || med.endDate) && (
+                          <View style={[styles.medTimeBadge, { backgroundColor: isDarkMode ? 'rgba(13, 148, 136, 0.2)' : '#F0FDFA' }]}>
+                            <Calendar size={11} color="#0D9488" strokeWidth={2.2} />
+                            <Text style={[styles.medTimeText, { color: isDarkMode ? '#99F6E4' : '#0D9488' }]}>
+                              {med.startDate || 'Today'} → {med.endDate || 'Ongoing'}
+                            </Text>
+                          </View>
+                        )}
                       </View>
-                      <Text style={[styles.medInstructionsText, { color: theme.colors.textMuted }]} numberOfLines={1}>
-                        {med.instructions}
-                      </Text>
                     </View>
                   </Pressable>
                 ))}
@@ -1270,7 +1401,7 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                   {frequencyOptions.map((freq) => (
                     <Pressable
                       key={freq}
-                      onPress={() => setMedFrequency(freq)}
+                      onPress={() => handleFrequencySelect(freq)}
                       style={[
                         styles.chip,
                         { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
@@ -1294,33 +1425,184 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
               {/* Start Date & End Date */}
               <View style={styles.rowInputsGroup}>
                 <View style={[styles.modalInputGroup, { flex: 1 }]}>
-                  <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Start Date</Text>
-                  <TextInput
-                    style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
-                    value={medStartDate}
-                    onChangeText={setMedStartDate}
-                  />
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary, marginBottom: 0 }]}>Start Date</Text>
+                  </View>
+                  <View style={styles.inputWithIconRow}>
+                    <TextInput
+                      style={[
+                        styles.modalInput,
+                        styles.inputWithIcon,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                        isWeb && styles.webOutlineNone,
+                      ]}
+                      placeholder="e.g. 2026-09-10"
+                      placeholderTextColor="#667269"
+                      value={medStartDate}
+                      onChangeText={setMedStartDate}
+                    />
+                    <Pressable
+                      onPress={() => handleOpenCalendar('start')}
+                      style={({ pressed }) => [
+                        styles.calendarIconBtn,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <Calendar size={17} color="#0D9488" strokeWidth={2.2} />
+                    </Pressable>
+                  </View>
+                  {/* Quick Start Date Presets */}
+                  <View style={styles.miniPresetRow}>
+                    <Pressable
+                      onPress={() => setMedStartDate('Today')}
+                      style={[styles.miniPresetBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <Text style={[styles.miniPresetText, { color: theme.colors.textSecondary }]}>Today</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        const tomorrow = new Date();
+                        tomorrow.setDate(tomorrow.getDate() + 1);
+                        setMedStartDate(tomorrow.toISOString().split('T')[0]);
+                      }}
+                      style={[styles.miniPresetBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <Text style={[styles.miniPresetText, { color: theme.colors.textSecondary }]}>Tomorrow</Text>
+                    </Pressable>
+                  </View>
                 </View>
+
                 <View style={[styles.modalInputGroup, { flex: 1 }]}>
-                  <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>End Date</Text>
-                  <TextInput
-                    style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
-                    value={medEndDate}
-                    onChangeText={setMedEndDate}
-                  />
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary, marginBottom: 0 }]}>End Date</Text>
+                  </View>
+                  <View style={styles.inputWithIconRow}>
+                    <TextInput
+                      style={[
+                        styles.modalInput,
+                        styles.inputWithIcon,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                        isWeb && styles.webOutlineNone,
+                      ]}
+                      placeholder="e.g. Ongoing"
+                      placeholderTextColor="#667269"
+                      value={medEndDate}
+                      onChangeText={setMedEndDate}
+                    />
+                    <Pressable
+                      onPress={() => handleOpenCalendar('end')}
+                      style={({ pressed }) => [
+                        styles.calendarIconBtn,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <Calendar size={17} color="#0D9488" strokeWidth={2.2} />
+                    </Pressable>
+                  </View>
+                  {/* Quick End Date Presets */}
+                  <View style={styles.miniPresetRow}>
+                    <Pressable
+                      onPress={() => setMedEndDate('Ongoing')}
+                      style={[styles.miniPresetBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <Text style={[styles.miniPresetText, { color: theme.colors.textSecondary }]}>Ongoing</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        const nextMonth = new Date();
+                        nextMonth.setDate(nextMonth.getDate() + 30);
+                        setMedEndDate(nextMonth.toISOString().split('T')[0]);
+                      }}
+                      style={[styles.miniPresetBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <Text style={[styles.miniPresetText, { color: theme.colors.textSecondary }]}>+1 Month</Text>
+                    </Pressable>
+                  </View>
                 </View>
               </View>
 
-              {/* Reminder Time */}
+              {/* Dose Reminder Times */}
               <View style={styles.modalInputGroup}>
-                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Reminder Time</Text>
-                <TextInput
-                  style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
-                  placeholder="e.g. 08:00 AM"
-                  placeholderTextColor="#667269"
-                  value={medReminderTime}
-                  onChangeText={setMedReminderTime}
-                />
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                  <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary, marginBottom: 0 }]}>
+                    {medReminderTimes.length > 1
+                      ? `Reminder Times (${medReminderTimes.length} Doses)`
+                      : 'Reminder Time'}
+                  </Text>
+                  <Pressable
+                    onPress={handleAddReminderTimeSlot}
+                    style={({ pressed }) => [
+                      styles.addDoseSlotBtn,
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <Plus size={13} color="#0D9488" strokeWidth={2.5} />
+                    <Text style={styles.addDoseSlotText}>Add Dose</Text>
+                  </Pressable>
+                </View>
+                <Text style={[styles.modalHelperText, { color: theme.colors.textMuted }]}>
+                  Enter the specific time you take each dose. HumanOS will trigger notifications at these times.
+                </Text>
+
+                {medReminderTimes.map((timeVal, idx) => {
+                  let doseLabel = `Dose ${idx + 1}`;
+                  if (medFrequency === 'Twice daily') {
+                    doseLabel = idx === 0 ? '1st Dose (Morning)' : '2nd Dose (Evening)';
+                  } else if (medFrequency === 'Three times daily') {
+                    doseLabel = idx === 0 ? '1st Dose (Morning)' : idx === 1 ? '2nd Dose (Afternoon)' : '3rd Dose (Night)';
+                  }
+
+                  return (
+                    <View key={`time-slot-${idx}`} style={[styles.doseTimeSlotCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                      <View style={styles.doseTimeHeader}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                          <Clock size={13} color="#6366F1" strokeWidth={2.2} />
+                          <Text style={[styles.doseSlotLabel, { color: theme.colors.textPrimary }]}>{doseLabel}</Text>
+                        </View>
+                        {medReminderTimes.length > 1 && (
+                          <Pressable
+                            onPress={() => handleRemoveReminderTimeSlot(idx)}
+                            style={styles.removeDoseSlotBtn}
+                            hitSlop={6}
+                          >
+                            <X size={13} color="#94A3B8" strokeWidth={2.2} />
+                          </Pressable>
+                        )}
+                      </View>
+
+                      <View style={styles.inputWithIconRow}>
+                        <TextInput
+                          style={[
+                            styles.modalInput,
+                            styles.inputWithIcon,
+                            { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                            isWeb && styles.webOutlineNone,
+                          ]}
+                          placeholder="e.g. 08:30 AM"
+                          placeholderTextColor="#667269"
+                          value={timeVal}
+                          onChangeText={(val) => handleReminderTimeChange(idx, val)}
+                        />
+                        <Pressable
+                          onPress={() => handleOpenTimePicker(idx)}
+                          style={({ pressed }) => [
+                            styles.clockIconBtn,
+                            { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border },
+                            isWeb && styles.webPointer,
+                            pressed && styles.pressedOpacity,
+                          ]}
+                        >
+                          <Clock size={17} color="#6366F1" strokeWidth={2.2} />
+                        </Pressable>
+                      </View>
+                    </View>
+                  );
+                })}
               </View>
 
               {/* Instructions */}
@@ -1361,6 +1643,397 @@ export default function HealthScreen({ user, onLogout, onNavigateTab, navigation
                 <Text style={styles.modalSubmitText}>
                   {editingMedication ? 'Update Medication' : 'Save Medication'}
                 </Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ==================== 8. INTERACTIVE CALENDAR MODAL ==================== */}
+      <Modal
+        visible={calendarModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCalendarModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.calendarModalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            {/* Calendar Header */}
+            <View style={styles.calendarHeaderRow}>
+              <View>
+                <Text style={styles.modalKicker}>
+                  {calendarTargetField === 'start' ? 'MEDICATION SCHEDULE' : 'COURSE DURATION'}
+                </Text>
+                <Text style={[styles.calendarModalTitle, { color: theme.colors.textPrimary }]}>
+                  {calendarTargetField === 'start' ? 'Select Start Date' : 'Select End Date'}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setCalendarModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
+              </Pressable>
+            </View>
+
+            {/* Month & Year Navigation */}
+            {(() => {
+              const currentYear = calendarViewDate.getFullYear();
+              const currentMonth = calendarViewDate.getMonth();
+              const monthNames = [
+                'January', 'February', 'March', 'April', 'May', 'June',
+                'July', 'August', 'September', 'October', 'November', 'December'
+              ];
+              const monthName = monthNames[currentMonth];
+
+              const targetDateValue = calendarTargetField === 'start' ? medStartDate : medEndDate;
+
+              const handlePrevMonth = () => {
+                setCalendarViewDate(new Date(currentYear, currentMonth - 1, 1));
+              };
+
+              const handleNextMonth = () => {
+                setCalendarViewDate(new Date(currentYear, currentMonth + 1, 1));
+              };
+
+              const days = [];
+              const firstDayIndex = new Date(currentYear, currentMonth, 1).getDay();
+              const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+              const prevMonthDays = new Date(currentYear, currentMonth, 0).getDate();
+
+              for (let i = firstDayIndex - 1; i >= 0; i--) {
+                const d = new Date(currentYear, currentMonth - 1, prevMonthDays - i);
+                days.push({ dayNum: prevMonthDays - i, isCurrentMonth: false, date: d });
+              }
+              for (let i = 1; i <= daysInMonth; i++) {
+                const d = new Date(currentYear, currentMonth, i);
+                days.push({ dayNum: i, isCurrentMonth: true, date: d });
+              }
+              const remaining = (7 - (days.length % 7)) % 7;
+              for (let i = 1; i <= remaining; i++) {
+                const d = new Date(currentYear, currentMonth + 1, i);
+                days.push({ dayNum: i, isCurrentMonth: false, date: d });
+              }
+
+              const todayStr = new Date().toISOString().split('T')[0];
+
+              return (
+                <View style={styles.calendarBody}>
+                  <View style={styles.monthNavRow}>
+                    <Pressable
+                      onPress={handlePrevMonth}
+                      style={({ pressed }) => [
+                        styles.monthNavBtn,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <ChevronLeft size={18} color={theme.colors.textPrimary} strokeWidth={2.2} />
+                    </Pressable>
+
+                    <Text style={[styles.monthNavTitle, { color: theme.colors.textPrimary }]}>
+                      {monthName} {currentYear}
+                    </Text>
+
+                    <Pressable
+                      onPress={handleNextMonth}
+                      style={({ pressed }) => [
+                        styles.monthNavBtn,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <ChevronRight size={18} color={theme.colors.textPrimary} strokeWidth={2.2} />
+                    </Pressable>
+                  </View>
+
+                  {/* Day Names Row */}
+                  <View style={styles.weekDaysHeaderRow}>
+                    {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((wd) => (
+                      <Text key={wd} style={[styles.weekDayHeaderCell, { color: theme.colors.textMuted }]}>
+                        {wd}
+                      </Text>
+                    ))}
+                  </View>
+
+                  {/* Days Grid */}
+                  <View style={styles.daysGrid}>
+                    {days.map((item, dIdx) => {
+                      const dateIso = item.date.toISOString().split('T')[0];
+                      const isToday = dateIso === todayStr;
+                      const isSelected = targetDateValue === dateIso || (targetDateValue === 'Today' && isToday);
+
+                      return (
+                        <Pressable
+                          key={`cal-${dIdx}`}
+                          onPress={() => handleSelectCalendarDate(dateIso)}
+                          style={({ pressed }) => [
+                            styles.dayCell,
+                            isSelected && styles.dayCellSelected,
+                            isToday && !isSelected && styles.dayCellToday,
+                            isWeb && styles.webPointer,
+                            pressed && styles.pressedOpacity,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dayCellText,
+                              { color: item.isCurrentMonth ? theme.colors.textPrimary : theme.colors.textMuted },
+                              !item.isCurrentMonth && { opacity: 0.4 },
+                              isSelected && styles.dayCellTextSelected,
+                              isToday && !isSelected && styles.dayCellTextToday,
+                            ]}
+                          >
+                            {item.dayNum}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {/* Quick Preset Action Chips */}
+                  <View style={styles.calendarQuickActions}>
+                    <Pressable
+                      onPress={() => handleSelectCalendarDate('Today')}
+                      style={[styles.calQuickChip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <Text style={[styles.calQuickChipText, { color: theme.colors.textPrimary }]}>Today</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        const tom = new Date();
+                        tom.setDate(tom.getDate() + 1);
+                        handleSelectCalendarDate(tom.toISOString().split('T')[0]);
+                      }}
+                      style={[styles.calQuickChip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <Text style={[styles.calQuickChipText, { color: theme.colors.textPrimary }]}>Tomorrow</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => {
+                        const inWeek = new Date();
+                        inWeek.setDate(inWeek.getDate() + 7);
+                        handleSelectCalendarDate(inWeek.toISOString().split('T')[0]);
+                      }}
+                      style={[styles.calQuickChip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <Text style={[styles.calQuickChipText, { color: theme.colors.textPrimary }]}>+1 Week</Text>
+                    </Pressable>
+                    {calendarTargetField === 'end' && (
+                      <Pressable
+                        onPress={() => handleSelectCalendarDate('Ongoing')}
+                        style={[styles.calQuickChip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                      >
+                        <Text style={[styles.calQuickChipText, { color: '#0D9488' }]}>Ongoing</Text>
+                      </Pressable>
+                    )}
+                  </View>
+                </View>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ==================== 9. INTERACTIVE CLOCK / TIME PICKER MODAL ==================== */}
+      <Modal
+        visible={timePickerModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTimePickerModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.timePickerModalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            {/* Header */}
+            <View style={styles.calendarHeaderRow}>
+              <View>
+                <Text style={styles.modalKicker}>MEDICATION REMINDER CLOCK</Text>
+                <Text style={[styles.calendarModalTitle, { color: theme.colors.textPrimary }]}>
+                  {medReminderTimes.length > 1 ? `Set Dose ${timePickerTargetIndex + 1} Time` : 'Set Reminder Time'}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setTimePickerModalVisible(false)}
+                style={styles.modalCloseBtn}
+              >
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
+              </Pressable>
+            </View>
+
+            {/* Digital Clock Readout */}
+            <View style={styles.clockDigitalDisplay}>
+              <View style={styles.clockDigitsRow}>
+                <Pressable
+                  onPress={() => setPickerMode('hour')}
+                  style={[
+                    styles.clockDigitBox,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                    pickerMode === 'hour' && styles.clockDigitBoxActive,
+                  ]}
+                >
+                  <Text style={[styles.clockDigitText, { color: theme.colors.textPrimary }, pickerMode === 'hour' && styles.clockDigitTextActive]}>
+                    {String(pickerHour).padStart(2, '0')}
+                  </Text>
+                  <Text style={[styles.clockDigitSub, { color: theme.colors.textMuted }, pickerMode === 'hour' && styles.clockDigitSubActive]}>
+                    HOUR
+                  </Text>
+                </Pressable>
+
+                <Text style={[styles.clockColon, { color: theme.colors.textPrimary }]}>:</Text>
+
+                <Pressable
+                  onPress={() => setPickerMode('minute')}
+                  style={[
+                    styles.clockDigitBox,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                    pickerMode === 'minute' && styles.clockDigitBoxActive,
+                  ]}
+                >
+                  <Text style={[styles.clockDigitText, { color: theme.colors.textPrimary }, pickerMode === 'minute' && styles.clockDigitTextActive]}>
+                    {String(pickerMinute).padStart(2, '0')}
+                  </Text>
+                  <Text style={[styles.clockDigitSub, { color: theme.colors.textMuted }, pickerMode === 'minute' && styles.clockDigitSubActive]}>
+                    MIN
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* AM / PM Toggle */}
+              <View style={[styles.clockAmPmContainer, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Pressable
+                  onPress={() => setPickerPeriod('AM')}
+                  style={[
+                    styles.clockAmPmBtn,
+                    pickerPeriod === 'AM' && styles.clockAmPmBtnActive,
+                  ]}
+                >
+                  <Text style={[styles.clockAmPmText, { color: theme.colors.textSecondary }, pickerPeriod === 'AM' && styles.clockAmPmTextActive]}>
+                    AM
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setPickerPeriod('PM')}
+                  style={[
+                    styles.clockAmPmBtn,
+                    pickerPeriod === 'PM' && styles.clockAmPmBtnActive,
+                  ]}
+                >
+                  <Text style={[styles.clockAmPmText, { color: theme.colors.textSecondary }, pickerPeriod === 'PM' && styles.clockAmPmTextActive]}>
+                    PM
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Mode Selector Tabs */}
+            <View style={styles.clockModeTabsRow}>
+              <Pressable
+                onPress={() => setPickerMode('hour')}
+                style={[styles.clockModeTab, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }, pickerMode === 'hour' && styles.clockModeTabActive]}
+              >
+                <Text style={[styles.clockModeTabText, { color: theme.colors.textSecondary }, pickerMode === 'hour' && styles.clockModeTabTextActive]}>
+                  Hour (1 - 12)
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setPickerMode('minute')}
+                style={[styles.clockModeTab, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }, pickerMode === 'minute' && styles.clockModeTabActive]}
+              >
+                <Text style={[styles.clockModeTabText, { color: theme.colors.textSecondary }, pickerMode === 'minute' && styles.clockModeTabTextActive]}>
+                  Minute (00 - 55)
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Clock Grid */}
+            {pickerMode === 'hour' ? (
+              <View style={styles.clockGrid}>
+                {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((hr) => {
+                  const isSelected = pickerHour === hr;
+                  return (
+                    <Pressable
+                      key={`hr-${hr}`}
+                      onPress={() => {
+                        setPickerHour(hr);
+                        setPickerMode('minute');
+                      }}
+                      style={({ pressed }) => [
+                        styles.clockCell,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isSelected && styles.clockCellSelected,
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <Text style={[styles.clockCellText, { color: theme.colors.textPrimary }, isSelected && styles.clockCellTextSelected]}>
+                        {hr}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <View>
+                <View style={styles.clockGrid}>
+                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((min) => {
+                    const isSelected = pickerMinute === min;
+                    return (
+                      <Pressable
+                        key={`min-${min}`}
+                        onPress={() => setPickerMinute(min)}
+                        style={({ pressed }) => [
+                          styles.clockCell,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                          isSelected && styles.clockCellSelected,
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
+                        ]}
+                      >
+                        <Text style={[styles.clockCellText, { color: theme.colors.textPrimary }, isSelected && styles.clockCellTextSelected]}>
+                          {String(min).padStart(2, '0')}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {/* Fine minute adjustment */}
+                <View style={styles.minuteAdjustRow}>
+                  <Pressable
+                    onPress={() => setPickerMinute((prev) => (prev > 0 ? prev - 1 : 59))}
+                    style={[styles.minuteAdjustBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                  >
+                    <Text style={[styles.minuteAdjustBtnText, { color: theme.colors.textPrimary }]}>-1 Min</Text>
+                  </Pressable>
+                  <Text style={[styles.minuteAdjustLabel, { color: theme.colors.textMuted }]}>
+                    Exact: {String(pickerMinute).padStart(2, '0')}m
+                  </Text>
+                  <Pressable
+                    onPress={() => setPickerMinute((prev) => (prev < 59 ? prev + 1 : 0))}
+                    style={[styles.minuteAdjustBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                  >
+                    <Text style={[styles.minuteAdjustBtnText, { color: theme.colors.textPrimary }]}>+1 Min</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {/* Modal Actions */}
+            <View style={styles.clockActionsRow}>
+              <Pressable
+                onPress={() => setTimePickerModalVisible(false)}
+                style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
+              >
+                <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleApplyTimePicker}
+                style={[styles.modalSubmitBtn, { backgroundColor: '#6366F1' }]}
+              >
+                <Text style={styles.modalSubmitText}>Set Time</Text>
               </Pressable>
             </View>
           </View>
@@ -2219,6 +2892,411 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '800',
+  },
+  /* CALENDAR & DOSE TIME STYLES */
+  inputWithIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  inputWithIcon: {
+    flex: 1,
+  },
+  calendarIconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  miniPresetRow: {
+    flexDirection: 'row',
+    gap: 6,
+    marginTop: 6,
+  },
+  miniPresetBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  miniPresetText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+  },
+  modalHelperText: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 10,
+    lineHeight: 15,
+  },
+  addDoseSlotBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(13, 148, 136, 0.1)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  addDoseSlotText: {
+    color: '#0D9488',
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  doseTimeSlotCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    padding: 12,
+    marginBottom: 10,
+  },
+  doseTimeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  doseSlotLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  removeDoseSlotBtn: {
+    padding: 4,
+    borderRadius: 8,
+    backgroundColor: 'rgba(148, 163, 184, 0.2)',
+  },
+  timeSuggestionsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  timeChip: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#FFFFFF',
+  },
+  timeChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  /* CALENDAR MODAL */
+  calendarModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    marginHorizontal: 16,
+    marginBottom: 'auto',
+    marginTop: 'auto',
+    padding: 20,
+    maxWidth: 420,
+    width: '92%',
+    alignSelf: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  calendarHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 14,
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  calendarModalTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 2,
+  },
+  calendarBody: {
+    width: '100%',
+  },
+  monthNavRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  monthNavBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  monthNavTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  weekDaysHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 8,
+  },
+  weekDayHeaderCell: {
+    width: 38,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  daysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+  },
+  dayCell: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 2,
+  },
+  dayCellSelected: {
+    backgroundColor: '#0D9488',
+  },
+  dayCellToday: {
+    borderWidth: 1.5,
+    borderColor: '#0D9488',
+  },
+  dayCellText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  dayCellTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  dayCellTextToday: {
+    color: '#0D9488',
+    fontWeight: '800',
+  },
+  calendarQuickActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+    justifyContent: 'center',
+  },
+  calQuickChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  calQuickChipText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  /* CLOCK & TIME PICKER MODAL STYLES */
+  clockIconBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timePickerModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    marginHorizontal: 16,
+    marginBottom: 'auto',
+    marginTop: 'auto',
+    padding: 20,
+    maxWidth: 400,
+    width: '92%',
+    alignSelf: 'center',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.2,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  clockDigitalDisplay: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  clockDigitsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  clockDigitBox: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+    minWidth: 72,
+  },
+  clockDigitBoxActive: {
+    borderColor: '#6366F1',
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+  },
+  clockDigitText: {
+    fontSize: 28,
+    fontWeight: '900',
+    letterSpacing: -1,
+  },
+  clockDigitTextActive: {
+    color: '#6366F1',
+  },
+  clockDigitSub: {
+    fontSize: 9,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginTop: 2,
+  },
+  clockDigitSubActive: {
+    color: '#6366F1',
+  },
+  clockColon: {
+    fontSize: 26,
+    fontWeight: '900',
+  },
+  clockAmPmContainer: {
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    padding: 3,
+    flexDirection: 'column',
+    gap: 3,
+  },
+  clockAmPmBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  clockAmPmBtnActive: {
+    backgroundColor: '#6366F1',
+  },
+  clockAmPmText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  clockAmPmTextActive: {
+    color: '#FFFFFF',
+  },
+  clockModeTabsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  clockModeTab: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+    alignItems: 'center',
+  },
+  clockModeTabActive: {
+    borderColor: '#6366F1',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  clockModeTabText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  clockModeTabTextActive: {
+    color: '#6366F1',
+    fontWeight: '800',
+  },
+  clockGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    gap: 6,
+    paddingVertical: 4,
+  },
+  clockCell: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  clockCellSelected: {
+    backgroundColor: '#6366F1',
+    borderColor: '#6366F1',
+  },
+  clockCellText: {
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  clockCellTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+  },
+  minuteAdjustRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  minuteAdjustBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    backgroundColor: '#F8FAFC',
+  },
+  minuteAdjustBtnText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  minuteAdjustLabel: {
+    fontSize: 11.5,
+    fontWeight: '700',
+  },
+  clockActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 18,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
   },
 
   /* 12. DELETE MODAL */

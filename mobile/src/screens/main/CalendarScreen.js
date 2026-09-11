@@ -26,6 +26,7 @@ import {
   MapPin,
   Clock,
   Trash2,
+  Calendar,
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -73,14 +74,62 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
   const [eventToDelete, setEventToDelete] = useState(null);
   const [noticeMessage, setNoticeMessage] = useState('');
 
-  // Form State for creating/editing events
+  // Form State for creating/editing events (with placeholders, no forced times)
   const [eventTitle, setEventTitle] = useState('');
-  const [eventDateStr, setEventDateStr] = useState(todayYMD);
-  const [eventStartTime, setEventStartTime] = useState('10:00 AM');
-  const [eventEndTime, setEventEndTime] = useState('11:30 AM');
+  const [eventDateStr, setEventDateStr] = useState('');
+  const [eventStartTime, setEventStartTime] = useState('');
+  const [eventEndTime, setEventEndTime] = useState('');
   const [eventTag, setEventTag] = useState('Deep Work');
   const [eventReminder, setEventReminder] = useState(true);
   const [eventLocation, setEventLocation] = useState('');
+
+  // Interactive Calendar Picker Modal State
+  const [calendarModalVisible, setCalendarModalVisible] = useState(false);
+  const [calendarViewDate, setCalendarViewDate] = useState(new Date());
+
+  // Interactive Clock / Time Picker Modal State
+  const [timePickerModalVisible, setTimePickerModalVisible] = useState(false);
+  const [timePickerTarget, setTimePickerTarget] = useState('start'); // 'start' | 'end'
+  const [pickerHour, setPickerHour] = useState(10);
+  const [pickerMinute, setPickerMinute] = useState(0);
+  const [pickerPeriod, setPickerPeriod] = useState('AM'); // 'AM' | 'PM'
+  const [pickerMode, setPickerMode] = useState('hour'); // 'hour' | 'minute'
+
+  // Helper to parse time string (e.g. "10:30 AM") into { hour, minute, period }
+  const parseTimeString = (str) => {
+    if (!str || typeof str !== 'string' || !str.trim()) {
+      return { hour: 10, minute: 0, period: 'AM' };
+    }
+    const parts = str.trim().split(' ');
+    const period = parts[1]?.toUpperCase() === 'PM' ? 'PM' : 'AM';
+    const timeParts = parts[0]?.split(':') || ['10', '0'];
+    const hr = parseInt(timeParts[0], 10) || 10;
+    const min = parseInt(timeParts[1], 10) || 0;
+    return { hour: hr, minute: min, period };
+  };
+
+  // Open Clock / Time Picker Modal
+  const handleOpenTimePicker = (target) => {
+    setTimePickerTarget(target);
+    const timeVal = target === 'start' ? eventStartTime : eventEndTime;
+    const parsed = parseTimeString(timeVal);
+    setPickerHour(parsed.hour);
+    setPickerMinute(parsed.minute);
+    setPickerPeriod(parsed.period);
+    setPickerMode('hour');
+    setTimePickerModalVisible(true);
+  };
+
+  // Apply selected time from Clock Modal
+  const handleApplyTimePicker = () => {
+    const formatted = `${String(pickerHour).padStart(2, '0')}:${String(pickerMinute).padStart(2, '0')} ${pickerPeriod}`;
+    if (timePickerTarget === 'start') {
+      setEventStartTime(formatted);
+    } else {
+      setEventEndTime(formatted);
+    }
+    setTimePickerModalVisible(false);
+  };
 
   // Events State (dynamically bound to database user)
   const [events, setEvents] = useState(user?.events || []);
@@ -184,18 +233,17 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
       setEditingEvent(eventToEdit);
       setEventTitle(eventToEdit.title || '');
       setEventDateStr(eventToEdit.dateString || todayYMD);
-      setEventStartTime(eventToEdit.startTime || '10:00 AM');
-      setEventEndTime(eventToEdit.endTime || '11:30 AM');
+      setEventStartTime(eventToEdit.startTime || '');
+      setEventEndTime(eventToEdit.endTime || '');
       setEventTag(eventToEdit.tag || 'Deep Work');
       setEventReminder(eventToEdit.reminder !== undefined ? Boolean(eventToEdit.reminder) : true);
       setEventLocation(eventToEdit.location || '');
     } else {
       setEditingEvent(null);
-      const targetDate = presetDate || selectedDate;
-      setEventDateStr(formatYMD(targetDate));
+      setEventDateStr(presetDate ? formatYMD(presetDate) : '');
       setEventTitle('');
-      setEventStartTime('10:00 AM');
-      setEventEndTime('11:30 AM');
+      setEventStartTime('');
+      setEventEndTime('');
       setEventTag('Deep Work');
       setEventReminder(true);
       setEventLocation('');
@@ -209,17 +257,18 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
       showNotice('Please enter an event title');
       return;
     }
-    if (!eventDateStr.trim()) {
-      showNotice('Please provide a valid date');
-      return;
-    }
+
+    const resolvedDate = eventDateStr.trim() || todayYMD;
+    const timeFormatted = eventStartTime.trim() && eventEndTime.trim()
+      ? `${eventStartTime.trim()} - ${eventEndTime.trim()}`
+      : (eventStartTime.trim() || eventEndTime.trim() || 'All Day');
 
     const payload = {
       title: eventTitle.trim(),
-      dateString: eventDateStr.trim(),
-      startTime: eventStartTime.trim() || '10:00 AM',
-      endTime: eventEndTime.trim() || '11:30 AM',
-      time: `${eventStartTime.trim() || '10:00 AM'} - ${eventEndTime.trim() || '11:30 AM'}`,
+      dateString: resolvedDate,
+      startTime: eventStartTime.trim() || '',
+      endTime: eventEndTime.trim() || '',
+      time: timeFormatted,
       tag: eventTag,
       color: getColorForTag(eventTag),
       reminder: eventReminder,
@@ -760,16 +809,37 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                 />
               </View>
 
-              {/* Date Input */}
+              {/* Date Input with Calendar Trigger Icon Button */}
               <View style={styles.modalInputGroup}>
-                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Event Date (YYYY-MM-DD) *</Text>
-                <TextInput
-                  style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
-                  placeholder="YYYY-MM-DD (e.g. 2026-09-15)"
-                  placeholderTextColor="#94A3B8"
-                  value={eventDateStr}
-                  onChangeText={setEventDateStr}
-                />
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Event Date</Text>
+                <View style={styles.inputWithIconRow}>
+                  <TextInput
+                    style={[
+                      styles.modalInput,
+                      styles.inputWithIcon,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                      isWeb && styles.webOutlineNone,
+                    ]}
+                    placeholder="YYYY-MM-DD (e.g. 2026-09-15)"
+                    placeholderTextColor="#94A3B8"
+                    value={eventDateStr}
+                    onChangeText={setEventDateStr}
+                  />
+                  <Pressable
+                    onPress={() => {
+                      setCalendarViewDate(eventDateStr ? new Date(eventDateStr) : new Date());
+                      setCalendarModalVisible(true);
+                    }}
+                    style={({ pressed }) => [
+                      styles.iconTriggerBtn,
+                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <Calendar size={17} color="#4F46E5" strokeWidth={2.2} />
+                  </Pressable>
+                </View>
               </View>
 
               {/* Quick Date Presets */}
@@ -806,27 +876,64 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                 </View>
               </View>
 
-              {/* Time Slots */}
+              {/* Time Slots with Clock Picker Triggers */}
               <View style={styles.timeRowGroup}>
                 <View style={[styles.modalInputGroup, { flex: 1 }]}>
                   <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>Start Time</Text>
-                  <TextInput
-                    style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
-                    placeholder="10:00 AM"
-                    placeholderTextColor="#94A3B8"
-                    value={eventStartTime}
-                    onChangeText={setEventStartTime}
-                  />
+                  <View style={styles.inputWithIconRow}>
+                    <TextInput
+                      style={[
+                        styles.modalInput,
+                        styles.inputWithIcon,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                        isWeb && styles.webOutlineNone,
+                      ]}
+                      placeholder="e.g. 10:00 AM"
+                      placeholderTextColor="#94A3B8"
+                      value={eventStartTime}
+                      onChangeText={setEventStartTime}
+                    />
+                    <Pressable
+                      onPress={() => handleOpenTimePicker('start')}
+                      style={({ pressed }) => [
+                        styles.iconTriggerBtn,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <Clock size={17} color="#4F46E5" strokeWidth={2.2} />
+                    </Pressable>
+                  </View>
                 </View>
+
                 <View style={[styles.modalInputGroup, { flex: 1 }]}>
                   <Text style={[styles.modalInputLabel, { color: theme.colors.textSecondary }]}>End Time</Text>
-                  <TextInput
-                    style={[styles.modalInput, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
-                    placeholder="11:30 AM"
-                    placeholderTextColor="#94A3B8"
-                    value={eventEndTime}
-                    onChangeText={setEventEndTime}
-                  />
+                  <View style={styles.inputWithIconRow}>
+                    <TextInput
+                      style={[
+                        styles.modalInput,
+                        styles.inputWithIcon,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
+                        isWeb && styles.webOutlineNone,
+                      ]}
+                      placeholder="e.g. 11:30 AM"
+                      placeholderTextColor="#94A3B8"
+                      value={eventEndTime}
+                      onChangeText={setEventEndTime}
+                    />
+                    <Pressable
+                      onPress={() => handleOpenTimePicker('end')}
+                      style={({ pressed }) => [
+                        styles.iconTriggerBtn,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <Clock size={17} color="#4F46E5" strokeWidth={2.2} />
+                    </Pressable>
+                  </View>
                 </View>
               </View>
 
@@ -941,6 +1048,353 @@ export default function CalendarScreen({ user, onLogout, onNavigateTab, navigati
                 style={[styles.modalSubmitBtn, { backgroundColor: '#EF4444' }]}
               >
                 <Text style={styles.modalSubmitText}>Delete</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ==================== 5. CALENDAR PICKER MODAL ==================== */}
+      <Modal
+        visible={calendarModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCalendarModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.pickerModalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
+              <View>
+                <Text style={styles.modalKicker}>DATE SELECTOR</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>Choose Event Date</Text>
+              </View>
+              <Pressable
+                onPress={() => setCalendarModalVisible(false)}
+                style={[styles.modalCloseBtn, { backgroundColor: theme.colors.cardAltBg }]}
+              >
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
+              </Pressable>
+            </View>
+
+            {(() => {
+              const currentYear = calendarViewDate.getFullYear();
+              const currentMonth = calendarViewDate.getMonth();
+              const monthName = MONTH_NAMES[currentMonth];
+
+              const handlePrevMonth = () => {
+                setCalendarViewDate(new Date(currentYear, currentMonth - 1, 1));
+              };
+
+              const handleNextMonth = () => {
+                setCalendarViewDate(new Date(currentYear, currentMonth + 1, 1));
+              };
+
+              const days = [];
+              const firstDayIdx = new Date(currentYear, currentMonth, 1).getDay();
+              const daysInCurMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+              const prevMthDays = new Date(currentYear, currentMonth, 0).getDate();
+
+              for (let i = firstDayIdx - 1; i >= 0; i--) {
+                const d = new Date(currentYear, currentMonth - 1, prevMthDays - i);
+                days.push({ dayNum: prevMthDays - i, isCurrentMonth: false, date: d });
+              }
+              for (let i = 1; i <= daysInCurMonth; i++) {
+                const d = new Date(currentYear, currentMonth, i);
+                days.push({ dayNum: i, isCurrentMonth: true, date: d });
+              }
+              const rem = (7 - (days.length % 7)) % 7;
+              for (let i = 1; i <= rem; i++) {
+                const d = new Date(currentYear, currentMonth + 1, i);
+                days.push({ dayNum: i, isCurrentMonth: false, date: d });
+              }
+
+              return (
+                <View>
+                  <View style={styles.monthNavRow}>
+                    <Pressable
+                      onPress={handlePrevMonth}
+                      style={[styles.monthNavBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <ChevronLeft size={18} color={theme.colors.textPrimary} strokeWidth={2.2} />
+                    </Pressable>
+
+                    <Text style={[styles.monthNavTitle, { color: theme.colors.textPrimary }]}>
+                      {monthName} {currentYear}
+                    </Text>
+
+                    <Pressable
+                      onPress={handleNextMonth}
+                      style={[styles.monthNavBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                    >
+                      <ChevronRight size={18} color={theme.colors.textPrimary} strokeWidth={2.2} />
+                    </Pressable>
+                  </View>
+
+                  <View style={styles.weekDaysHeaderRow}>
+                    {WEEK_DAYS.map((wd) => (
+                      <Text key={wd} style={[styles.weekDayHeaderCell, { color: theme.colors.textMuted }]}>
+                        {wd}
+                      </Text>
+                    ))}
+                  </View>
+
+                  <View style={styles.daysGrid}>
+                    {days.map((item, dIdx) => {
+                      const dateIso = formatYMD(item.date);
+                      const isTodayDate = dateIso === todayYMD;
+                      const isSelected = eventDateStr === dateIso;
+
+                      return (
+                        <Pressable
+                          key={`cal-${dIdx}`}
+                          onPress={() => {
+                            setEventDateStr(dateIso);
+                            setCalendarModalVisible(false);
+                          }}
+                          style={({ pressed }) => [
+                            styles.dayCell,
+                            isSelected && styles.dayCellSelected,
+                            isTodayDate && !isSelected && styles.dayCellToday,
+                            isWeb && styles.webPointer,
+                            pressed && styles.pressedOpacity,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.dayCellText,
+                              { color: item.isCurrentMonth ? theme.colors.textPrimary : theme.colors.textMuted },
+                              !item.isCurrentMonth && { opacity: 0.35 },
+                              isSelected && styles.dayCellTextSelected,
+                              isTodayDate && !isSelected && styles.dayCellTextToday,
+                            ]}
+                          >
+                            {item.dayNum}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                </View>
+              );
+            })()}
+          </View>
+        </View>
+      </Modal>
+
+      {/* ==================== 6. INTERACTIVE CLOCK / TIME PICKER MODAL ==================== */}
+      <Modal
+        visible={timePickerModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTimePickerModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={[styles.pickerModalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
+              <View>
+                <Text style={styles.modalKicker}>INTERACTIVE CLOCK</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+                  {timePickerTarget === 'start' ? 'Select Start Time' : 'Select End Time'}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setTimePickerModalVisible(false)}
+                style={[styles.modalCloseBtn, { backgroundColor: theme.colors.cardAltBg }]}
+              >
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
+              </Pressable>
+            </View>
+
+            {/* Digital Clock Readout */}
+            <View style={styles.clockDigitalDisplay}>
+              <View style={styles.clockDigitsRow}>
+                <Pressable
+                  onPress={() => setPickerMode('hour')}
+                  style={[
+                    styles.clockDigitBox,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                    pickerMode === 'hour' && styles.clockDigitBoxActive,
+                  ]}
+                >
+                  <Text style={[styles.clockDigitText, { color: theme.colors.textPrimary }, pickerMode === 'hour' && styles.clockDigitTextActive]}>
+                    {String(pickerHour).padStart(2, '0')}
+                  </Text>
+                  <Text style={[styles.clockDigitSub, { color: theme.colors.textMuted }, pickerMode === 'hour' && styles.clockDigitSubActive]}>
+                    HOUR
+                  </Text>
+                </Pressable>
+
+                <Text style={[styles.clockColon, { color: theme.colors.textPrimary }]}>:</Text>
+
+                <Pressable
+                  onPress={() => setPickerMode('minute')}
+                  style={[
+                    styles.clockDigitBox,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                    pickerMode === 'minute' && styles.clockDigitBoxActive,
+                  ]}
+                >
+                  <Text style={[styles.clockDigitText, { color: theme.colors.textPrimary }, pickerMode === 'minute' && styles.clockDigitTextActive]}>
+                    {String(pickerMinute).padStart(2, '0')}
+                  </Text>
+                  <Text style={[styles.clockDigitSub, { color: theme.colors.textMuted }, pickerMode === 'minute' && styles.clockDigitSubActive]}>
+                    MIN
+                  </Text>
+                </Pressable>
+              </View>
+
+              {/* AM / PM Switcher */}
+              <View style={[styles.clockAmPmContainer, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <Pressable
+                  onPress={() => setPickerPeriod('AM')}
+                  style={[
+                    styles.clockAmPmBtn,
+                    pickerPeriod === 'AM' && styles.clockAmPmBtnActive,
+                  ]}
+                >
+                  <Text style={[styles.clockAmPmText, { color: theme.colors.textSecondary }, pickerPeriod === 'AM' && styles.clockAmPmTextActive]}>
+                    AM
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setPickerPeriod('PM')}
+                  style={[
+                    styles.clockAmPmBtn,
+                    pickerPeriod === 'PM' && styles.clockAmPmBtnActive,
+                  ]}
+                >
+                  <Text style={[styles.clockAmPmText, { color: theme.colors.textSecondary }, pickerPeriod === 'PM' && styles.clockAmPmTextActive]}>
+                    PM
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Mode Selector Tabs */}
+            <View style={styles.clockModeTabsRow}>
+              <Pressable
+                onPress={() => setPickerMode('hour')}
+                style={[styles.clockModeTab, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }, pickerMode === 'hour' && styles.clockModeTabActive]}
+              >
+                <Text style={[styles.clockModeTabText, { color: theme.colors.textSecondary }, pickerMode === 'hour' && styles.clockModeTabTextActive]}>
+                  Hour (1 - 12)
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setPickerMode('minute')}
+                style={[styles.clockModeTab, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }, pickerMode === 'minute' && styles.clockModeTabActive]}
+              >
+                <Text style={[styles.clockModeTabText, { color: theme.colors.textSecondary }, pickerMode === 'minute' && styles.clockModeTabTextActive]}>
+                  Minute (00 - 55)
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Clock Grid */}
+            {pickerMode === 'hour' ? (
+              <View style={styles.clockGrid}>
+                {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((hr) => {
+                  const isSelected = pickerHour === hr;
+                  return (
+                    <Pressable
+                      key={`hr-${hr}`}
+                      onPress={() => {
+                        setPickerHour(hr);
+                        setPickerMode('minute');
+                      }}
+                      style={({ pressed }) => [
+                        styles.clockCell,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        isSelected && styles.clockCellSelected,
+                        isWeb && styles.webPointer,
+                        pressed && styles.pressedOpacity,
+                      ]}
+                    >
+                      <Text style={[styles.clockCellText, { color: theme.colors.textPrimary }, isSelected && styles.clockCellTextSelected]}>
+                        {hr}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : (
+              <View>
+                <View style={styles.clockGrid}>
+                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((min) => {
+                    const isSelected = pickerMinute === min;
+                    return (
+                      <Pressable
+                        key={`min-${min}`}
+                        onPress={() => setPickerMinute(min)}
+                        style={({ pressed }) => [
+                          styles.clockCell,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                          isSelected && styles.clockCellSelected,
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
+                        ]}
+                      >
+                        <Text style={[styles.clockCellText, { color: theme.colors.textPrimary }, isSelected && styles.clockCellTextSelected]}>
+                          {String(min).padStart(2, '0')}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {/* Fine minute adjustment */}
+                <View style={styles.minuteAdjustRow}>
+                  <Pressable
+                    onPress={() => setPickerMinute((prev) => (prev > 0 ? prev - 1 : 59))}
+                    style={[styles.minuteAdjustBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                  >
+                    <Text style={[styles.minuteAdjustBtnText, { color: theme.colors.textPrimary }]}>-1 Min</Text>
+                  </Pressable>
+                  <Text style={[styles.minuteAdjustLabel, { color: theme.colors.textMuted }]}>
+                    Exact: {String(pickerMinute).padStart(2, '0')}m
+                  </Text>
+                  <Pressable
+                    onPress={() => setPickerMinute((prev) => (prev < 59 ? prev + 1 : 0))}
+                    style={[styles.minuteAdjustBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                  >
+                    <Text style={[styles.minuteAdjustBtnText, { color: theme.colors.textPrimary }]}>+1 Min</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {/* Quick Preset Time Chips */}
+            <View style={styles.clockQuickPresetsRow}>
+              {['09:00 AM', '10:00 AM', '02:00 PM', '05:00 PM'].map((preset) => (
+                <Pressable
+                  key={preset}
+                  onPress={() => {
+                    const parsed = parseTimeString(preset);
+                    setPickerHour(parsed.hour);
+                    setPickerMinute(parsed.minute);
+                    setPickerPeriod(parsed.period);
+                  }}
+                  style={[styles.clockPresetChip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                >
+                  <Text style={[styles.clockPresetChipText, { color: theme.colors.textSecondary }]}>{preset}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Modal Actions */}
+            <View style={styles.clockActionsRow}>
+              <Pressable
+                onPress={() => setTimePickerModalVisible(false)}
+                style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
+              >
+                <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleApplyTimePicker}
+                style={[styles.modalSubmitBtn, { backgroundColor: '#4F46E5' }]}
+              >
+                <Text style={styles.modalSubmitText}>Set Time</Text>
               </Pressable>
             </View>
           </View>
@@ -1500,6 +1954,24 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#0F172A',
   },
+  inputWithIconRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  inputWithIcon: {
+    flex: 1,
+  },
+  iconTriggerBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   timeRowGroup: {
     flexDirection: 'row',
     gap: 10,
@@ -1608,6 +2080,277 @@ const styles = StyleSheet.create({
     color: '#E0E7FF',
     fontSize: 12.5,
     fontWeight: '700',
+  },
+
+  /* PICKER MODAL STYLES (CALENDAR & CLOCK) */
+  pickerModalCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 20,
+    marginHorizontal: 20,
+    marginBottom: 'auto',
+    marginTop: 'auto',
+    shadowColor: '#0F172A',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 8,
+    maxWidth: 380,
+    alignSelf: 'center',
+    width: '92%',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  monthNavRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  monthNavBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  monthNavTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  weekDaysHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-around',
+    marginBottom: 8,
+  },
+  weekDayHeaderCell: {
+    width: 34,
+    textAlign: 'center',
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  daysGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+  },
+  dayCell: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginVertical: 2,
+  },
+  dayCellSelected: {
+    backgroundColor: '#4F46E5',
+  },
+  dayCellToday: {
+    borderWidth: 1.5,
+    borderColor: '#4F46E5',
+  },
+  dayCellText: {
+    fontSize: 12.5,
+    fontWeight: '600',
+    color: '#0F172A',
+  },
+  dayCellTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  dayCellTextToday: {
+    color: '#4F46E5',
+    fontWeight: '800',
+  },
+
+  /* CLOCK DIGITAL DISPLAY */
+  clockDigitalDisplay: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 12,
+    paddingVertical: 10,
+    marginBottom: 8,
+  },
+  clockDigitsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  clockDigitBox: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1.5,
+    borderColor: '#E2E8F0',
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    alignItems: 'center',
+    minWidth: 58,
+  },
+  clockDigitBoxActive: {
+    borderColor: '#4F46E5',
+    backgroundColor: 'rgba(99, 102, 241, 0.1)',
+  },
+  clockDigitText: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  clockDigitTextActive: {
+    color: '#4F46E5',
+  },
+  clockDigitSub: {
+    fontSize: 8.5,
+    fontWeight: '800',
+    color: '#94A3B8',
+    marginTop: 1,
+  },
+  clockDigitSubActive: {
+    color: '#4F46E5',
+  },
+  clockColon: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#0F172A',
+  },
+  clockAmPmContainer: {
+    flexDirection: 'column',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 3,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 2,
+  },
+  clockAmPmBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 9,
+    alignItems: 'center',
+  },
+  clockAmPmBtnActive: {
+    backgroundColor: '#4F46E5',
+  },
+  clockAmPmText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#64748B',
+  },
+  clockAmPmTextActive: {
+    color: '#FFFFFF',
+  },
+  clockModeTabsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  clockModeTab: {
+    flex: 1,
+    paddingVertical: 8,
+    alignItems: 'center',
+    borderRadius: 10,
+    backgroundColor: '#F1F5F9',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  clockModeTabActive: {
+    backgroundColor: '#0F172A',
+    borderColor: '#0F172A',
+  },
+  clockModeTabText: {
+    fontSize: 11.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  clockModeTabTextActive: {
+    color: '#FFFFFF',
+  },
+  clockGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    gap: 6,
+    marginBottom: 8,
+  },
+  clockCell: {
+    width: 44,
+    height: 40,
+    borderRadius: 11,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clockCellSelected: {
+    backgroundColor: '#4F46E5',
+    borderColor: '#4F46E5',
+  },
+  clockCellText: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  clockCellTextSelected: {
+    color: '#FFFFFF',
+  },
+  minuteAdjustRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 6,
+    paddingHorizontal: 4,
+  },
+  minuteAdjustBtn: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  minuteAdjustBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  minuteAdjustLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  clockQuickPresetsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    justifyContent: 'center',
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  clockPresetChip: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  clockPresetChipText: {
+    fontSize: 10.5,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  clockActionsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 14,
   },
 
   pressedOpacity: { opacity: 0.7 },
