@@ -14,6 +14,8 @@ import FinanceScreen from './src/screens/main/FinanceScreen';
 import NotesScreen from './src/screens/main/NotesScreen';
 import CalendarScreen from './src/screens/main/CalendarScreen';
 import HealthScreen from './src/screens/main/HealthScreen';
+import { ReminderProvider } from './src/contexts/ReminderContext';
+import ReminderModal from './src/components/ReminderModal';
 import { getToken, getUser, saveUser, clearSession } from './src/services/storage';
 import { fetchUserProfile } from './src/services/api';
 
@@ -280,7 +282,10 @@ export default function App() {
   return (
     <ThemeProvider initialDarkMode={currentUser?.preferences?.darkMode ?? true}>
       <SafeAreaProvider style={{ flex: 1, backgroundColor: '#0A0E1A' }}>
-        {renderScreen()}
+        <ReminderProvider user={currentUser} onNavigateTab={handleNavigateTab}>
+          {renderScreen()}
+          <ReminderModal />
+        </ReminderProvider>
       </SafeAreaProvider>
     </ThemeProvider>
   );

@@ -94,6 +94,7 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
   const [createModalVisible, setCreateModalVisible] = useState(false);
   const [currencyModalVisible, setCurrencyModalVisible] = useState(false);
   const [selectedCurrency, setSelectedCurrency] = useState(CURRENCIES[0]); // Default to XAF (FCFA)
+  const sym = selectedCurrency?.symbol || '$';
   const [noticeMessage, setNoticeMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearch, setShowSearch] = useState(false);
@@ -181,8 +182,8 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
     if (transactionToEdit && typeof transactionToEdit === 'object') {
       setEditingTransaction(transactionToEdit);
       setItemTitle(transactionToEdit.title || '');
-      setItemAmount(String(Math.abs(transactionToEdit.amount || 0)));
-      const resolvedType = transactionToEdit.type || (transactionToEdit.amount > 0 ? 'Income' : 'Expense');
+      setItemAmount(String(Math.abs(Number(transactionToEdit.amount) || 0)));
+      const resolvedType = transactionToEdit.type || (Number(transactionToEdit.amount) > 0 ? 'Income' : 'Expense');
       setItemType(resolvedType);
       setItemCategory(transactionToEdit.category || (resolvedType === 'Income' ? 'Salary' : 'Food & Groceries'));
       setItemDate(transactionToEdit.date || 'Today');
@@ -224,20 +225,20 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
         const res = await updateTransaction(idToUpdate, payload, token);
         if (res && res.success && res.transaction) {
           setTransactions((prev) =>
-            prev.map((t) => ((t.id === idToUpdate || t._id === idToUpdate) ? res.transaction : t))
+            (Array.isArray(prev) ? prev : []).map((t) => ((t.id === idToUpdate || t._id === idToUpdate) ? res.transaction : t))
           );
           showNotice(`Updated: "${itemTitle.trim()}"`);
         } else {
           // Local fallback
           setTransactions((prev) =>
-            prev.map((t) => ((t.id === idToUpdate || t._id === idToUpdate) ? { ...t, ...payload } : t))
+            (Array.isArray(prev) ? prev : []).map((t) => ((t.id === idToUpdate || t._id === idToUpdate) ? { ...t, ...payload } : t))
           );
           showNotice(`Updated: "${itemTitle.trim()}"`);
         }
       } else {
         const res = await createTransaction(payload, token);
         if (res && res.success && res.transaction) {
-          setTransactions((prev) => [res.transaction, ...prev]);
+          setTransactions((prev) => [res.transaction, ...(Array.isArray(prev) ? prev : [])]);
           showNotice(itemType === 'Income' ? `+ Added Income: "${itemTitle.trim()}"` : `- Logged Expense: "${itemTitle.trim()}"`);
         } else {
           // Local fallback
@@ -247,7 +248,7 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
             ...payload,
             createdAt: new Date().toISOString(),
           };
-          setTransactions((prev) => [newTx, ...prev]);
+          setTransactions((prev) => [newTx, ...(Array.isArray(prev) ? prev : [])]);
           showNotice(itemType === 'Income' ? `+ Added Income: "${itemTitle.trim()}"` : `- Logged Expense: "${itemTitle.trim()}"`);
         }
       }
@@ -269,7 +270,7 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
     if (!transactionToDelete) return;
     const idToDelete = transactionToDelete.id || transactionToDelete._id;
 
-    setTransactions((prev) => prev.filter((t) => t.id !== idToDelete && t._id !== idToDelete));
+    setTransactions((prev) => (Array.isArray(prev) ? prev : []).filter((t) => t && t.id !== idToDelete && t._id !== idToDelete));
     setDeleteModalVisible(false);
     const deletedTitle = transactionToDelete.title;
     setTransactionToDelete(null);
@@ -286,14 +287,16 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
   };
 
   // Calculations
-  const totalIncome = transactions
-    .filter((t) => t.amount > 0 || t.type === 'Income')
-    .reduce((acc, t) => acc + Math.abs(t.amount), 0);
+  const safeTransactions = Array.isArray(transactions) ? transactions : [];
+
+  const totalIncome = safeTransactions
+    .filter((t) => t && (Number(t.amount) > 0 || t.type === 'Income'))
+    .reduce((acc, t) => acc + Math.abs(Number(t.amount) || 0), 0);
 
   const totalExpense = Math.abs(
-    transactions
-      .filter((t) => t.amount < 0 || t.type === 'Expense')
-      .reduce((acc, t) => acc + Math.abs(t.amount), 0)
+    safeTransactions
+      .filter((t) => t && (Number(t.amount) < 0 || t.type === 'Expense'))
+      .reduce((acc, t) => acc + Math.abs(Number(t.amount) || 0), 0)
   );
 
   const netSavings = totalIncome - totalExpense;
@@ -311,20 +314,31 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
 
   const budgetStatus = getBudgetStatus();
 
-  const filteredTransactions = transactions.filter((t) => {
+  const filteredTransactions = safeTransactions.filter((t) => {
+    if (!t) return false;
     let matchesType = true;
-    if (activeFilter === 'Income') matchesType = (t.type === 'Income' || t.amount > 0);
-    if (activeFilter === 'Expenses') matchesType = (t.type === 'Expense' || t.amount < 0);
+    if (activeFilter === 'Income') matchesType = (t.type === 'Income' || Number(t.amount) > 0);
+    if (activeFilter === 'Expenses') matchesType = (t.type === 'Expense' || Number(t.amount) < 0);
 
     const title = (t?.title || '').toLowerCase();
     const cat = (t?.category || '').toLowerCase();
+    const notes = (t?.notes || t?.description || '').toLowerCase();
+    const date = (t?.date || '').toLowerCase();
+    const amountStr = String(Math.abs(Number(t?.amount) || 0));
+    const typeStr = (t?.type || '').toLowerCase();
+
     const q = searchQuery ? searchQuery.toLowerCase().trim() : '';
-    const matchesSearch = !q || title.includes(q) || cat.includes(q);
+    const matchesSearch =
+      !q ||
+      title.includes(q) ||
+      cat.includes(q) ||
+      notes.includes(q) ||
+      date.includes(q) ||
+      amountStr.includes(q) ||
+      typeStr.includes(q);
 
     return matchesType && matchesSearch;
   });
-
-  const sym = selectedCurrency.symbol;
 
   const handleGenerateFinanceInsight = async () => {
     setAiFinanceLoading(true);
@@ -383,27 +397,6 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
             </View>
 
             <View style={styles.headerActionBtns}>
-              {/* Search Toggle */}
-              <Pressable
-                onPress={() => {
-                  setShowSearch(!showSearch);
-                  if (showSearch) setSearchQuery('');
-                }}
-                style={({ pressed }) => [
-                  styles.headerSearchBtn,
-                  showSearch && styles.headerSearchBtnActive,
-                  isWeb && styles.webPointer,
-                  pressed && styles.pressedOpacity,
-                ]}
-                hitSlop={8}
-              >
-                {showSearch ? (
-                  <X size={17} color="#94A3B8" strokeWidth={2.2} />
-                ) : (
-                  <Search size={17} color="#94A3B8" strokeWidth={2.2} />
-                )}
-              </Pressable>
-
               {/* Currency Selector Pill */}
               <Pressable
                 onPress={() => setCurrencyModalVisible(true)}
@@ -423,25 +416,22 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
 
           <Text style={styles.headerSubtitle}>Track how much of your salary you spend each month.</Text>
 
-          {/* Search Bar */}
-          {showSearch && (
-            <View style={[styles.searchBarContainer, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF', borderColor: isDarkMode ? '#334155' : '#E2E8F0' }]}>
-              <Search size={15} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
-              <TextInput
-                style={[styles.searchInput, { color: isDarkMode ? '#F8FAFC' : '#0F172A' }, isWeb && styles.webOutlineNone]}
-                placeholder="Search by title, category, or note..."
-                placeholderTextColor="#94A3B8"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoFocus
-              />
-              {!!searchQuery && (
-                <Pressable onPress={() => setSearchQuery('')} hitSlop={6} style={{ padding: 4 }}>
-                  <X size={14} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
-                </Pressable>
-              )}
-            </View>
-          )}
+          {/* Search Bar - Permanently Visible & Fully Interactive */}
+          <View style={[styles.searchBarContainer, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF', borderColor: isDarkMode ? '#334155' : '#E2E8F0' }]}>
+            <Search size={15} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
+            <TextInput
+              style={[styles.searchInput, { color: isDarkMode ? '#F8FAFC' : '#0F172A' }, isWeb && styles.webOutlineNone]}
+              placeholder="Search by title, category, amount, or date..."
+              placeholderTextColor="#94A3B8"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {!!searchQuery && (
+              <Pressable onPress={() => setSearchQuery('')} hitSlop={6} style={{ padding: 4 }}>
+                <X size={14} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
+              </Pressable>
+            )}
+          </View>
 
           {/* Prominent Two-Button Row (100% visible on all Android and iOS screens) */}
           <View style={styles.headerButtonsRow}>
@@ -623,7 +613,7 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
               </Pressable>
             </View>
             <Text style={[styles.aiBriefingBody, { color: theme.colors.textPrimary }]}>
-              "{aiFinanceInsight}"
+              {`"${aiFinanceInsight}"`}
             </Text>
           </View>
 
@@ -693,11 +683,15 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
               </View>
             ) : (
               <View style={styles.txList}>
-                {filteredTransactions.map((tx) => {
-                  const isIncome = tx.amount > 0 || tx.type === 'Income';
+                {filteredTransactions.map((tx, idx) => {
+                  if (!tx) return null;
+                  const isIncome = Number(tx.amount) > 0 || tx.type === 'Income';
+                  const txKey = tx.id || tx._id || `tx-${idx}`;
+                  const numAmt = Math.abs(Number(tx.amount) || 0);
+
                   return (
                     <Pressable
-                      key={tx.id || tx._id}
+                      key={txKey}
                       onPress={() => openCreateModal(tx)}
                       style={({ pressed }) => [
                         styles.txItem,
@@ -714,7 +708,7 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
                         )}
                       </View>
                       <View style={styles.txMain}>
-                        <Text style={[styles.txTitle, { color: theme.colors.textPrimary }]}>{tx.title}</Text>
+                        <Text style={[styles.txTitle, { color: theme.colors.textPrimary }]}>{tx.title || 'Untitled'}</Text>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 }}>
                           <View style={[styles.txCategoryChip, { backgroundColor: isIncome ? '#ECFDF5' : '#FEE2E2' }]}>
                             <Text style={[styles.txCategoryText, { color: isIncome ? '#059669' : '#DC2626' }]}>
@@ -726,7 +720,7 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
                       </View>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
                         <Text style={[styles.txAmount, isIncome ? styles.amountPositive : styles.amountNegative]}>
-                          {isIncome ? `+${sym}${Math.abs(tx.amount).toFixed(2)}` : `-${sym}${Math.abs(tx.amount).toFixed(2)}`}
+                          {isIncome ? `+${sym}${numAmt.toFixed(2)}` : `-${sym}${numAmt.toFixed(2)}`}
                         </Text>
                         <Pressable
                           onPress={(e) => {
@@ -734,9 +728,13 @@ export default function FinanceScreen({ user, onLogout, onNavigateTab, navigatio
                             confirmDeleteTransaction(tx);
                           }}
                           hitSlop={8}
-                          style={{ padding: 4 }}
+                          style={({ pressed }) => [
+                            styles.txDeleteBtn,
+                            isWeb && styles.webPointer,
+                            pressed && styles.pressedOpacity,
+                          ]}
                         >
-                          <Trash2 size={14} color="#94A3B8" strokeWidth={2.2} />
+                          <Trash2 size={15} color="#EF4444" strokeWidth={2.2} />
                         </Pressable>
                       </View>
                     </Pressable>
@@ -1445,6 +1443,13 @@ const styles = StyleSheet.create({
   txAmount: { fontSize: 13.5, fontWeight: '800' },
   amountPositive: { color: '#059669' },
   amountNegative: { color: '#0F172A' },
+  txDeleteBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 
   modalOverlay: { flex: 1, backgroundColor: 'rgba(15, 23, 42, 0.7)', justifyContent: 'flex-end' },
   modalCard: { backgroundColor: '#FFFFFF', borderTopLeftRadius: 28, borderTopRightRadius: 28, padding: 20 },

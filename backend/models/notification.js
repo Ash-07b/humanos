@@ -36,6 +36,23 @@ const notificationSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    completed: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    snoozedUntil: {
+      type: Date,
+      default: null,
+    },
+    repeatUntilCompleted: {
+      type: Boolean,
+      default: true,
+    },
+    lastAlertedAt: {
+      type: Date,
+      default: Date.now,
+    },
     relatedEntityId: {
       type: mongoose.Schema.Types.Mixed,
       default: null,

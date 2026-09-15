@@ -9,6 +9,9 @@ const {
   markAllAsRead,
   deleteNotification,
   clearAllNotifications,
+  getActiveReminders,
+  completeReminder,
+  snoozeReminder,
 } = require('../controllers/notification.controllers');
 const { protect } = require('../middleware/authMiddleware');
 
@@ -20,6 +23,9 @@ router.route('/')
   .get(getNotifications)
   .delete(clearAllNotifications);
 
+router.route('/active-reminders')
+  .get(getActiveReminders);
+
 router.route('/unread-count')
   .get(getUnreadCount);
 
@@ -28,6 +34,12 @@ router.route('/mark-all-read')
 
 router.route('/:id')
   .delete(deleteNotification);
+
+router.route('/:id/complete')
+  .patch(completeReminder);
+
+router.route('/:id/snooze')
+  .patch(snoozeReminder);
 
 router.route('/:id/read')
   .patch(markAsRead);

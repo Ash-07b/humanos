@@ -404,14 +404,48 @@ export default function NotesScreen({ user, onLogout, onNavigateTab, navigation 
             ))}
           </ScrollView>
 
+          {/* Section Header Row with High-Visibility Add Button */}
+          <View style={styles.sectionHeaderRow}>
+            <View>
+              <Text style={styles.sectionKicker}>KNOWLEDGE ENTRIES</Text>
+              <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>
+                {selectedTag === 'All' ? 'All Notes' : `${selectedTag} Notes`}
+              </Text>
+            </View>
+            <Pressable
+              onPress={() => openCreateModal()}
+              style={({ pressed }) => [
+                styles.sectionAddNoteBtn,
+                isWeb && styles.webPointer,
+                pressed && styles.pressedOpacity,
+              ]}
+            >
+              <Plus size={14} color="#FFFFFF" strokeWidth={2.8} />
+              <Text style={styles.sectionAddNoteBtnText}>Note</Text>
+            </Pressable>
+          </View>
+
           {/* Notes Grid */}
           {filteredNotes.length === 0 ? (
-            <View style={{ alignItems: 'center', paddingVertical: 36, gap: 8 }}>
-              <FileText size={36} color="#94A3B8" strokeWidth={1.5} />
-              <Text style={{ color: theme.colors.textPrimary, fontSize: 14, fontWeight: '700' }}>No notes captured yet</Text>
-              <Text style={{ color: theme.colors.textSecondary, fontSize: 12, textAlign: 'center' }}>
-                Tap "+ Note" above to capture thoughts, ideas, or architectural blueprints.
+            <View style={[styles.emptyStateBox, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
+              <View style={styles.emptyIconCircle}>
+                <FileText size={32} color="#6366F1" strokeWidth={1.8} />
+              </View>
+              <Text style={[styles.emptyStateTitle, { color: theme.colors.textPrimary }]}>No notes captured yet</Text>
+              <Text style={[styles.emptyStateDesc, { color: theme.colors.textSecondary }]}>
+                Capture thoughts, blueprints, ideas, and strategies into your personal knowledge base.
               </Text>
+              <Pressable
+                onPress={() => openCreateModal()}
+                style={({ pressed }) => [
+                  styles.emptyAddBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                <Plus size={15} color="#FFFFFF" strokeWidth={2.8} />
+                <Text style={styles.emptyAddBtnText}>Create Note</Text>
+              </Pressable>
             </View>
           ) : (
             <View style={styles.notesList}>
@@ -789,6 +823,98 @@ const styles = StyleSheet.create({
   chipTextActive: { color: '#FFFFFF' },
   modalSubmitBtn: { backgroundColor: '#4F46E5', borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
   modalSubmitText: { color: '#FFFFFF', fontSize: 14, fontWeight: '800' },
+
+  /* Section Header */
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+    marginTop: 4,
+  },
+  sectionKicker: {
+    color: '#6366F1',
+    fontSize: 9.5,
+    fontWeight: '800',
+    letterSpacing: 1.1,
+    marginBottom: 2,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    letterSpacing: -0.3,
+  },
+  sectionAddNoteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 12,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  sectionAddNoteBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12.5,
+    fontWeight: '800',
+    letterSpacing: 0.2,
+  },
+
+  /* Empty State */
+  emptyStateBox: {
+    alignItems: 'center',
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    marginTop: 8,
+  },
+  emptyIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: 'rgba(99, 102, 241, 0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  emptyStateTitle: {
+    fontSize: 15.5,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  emptyStateDesc: {
+    fontSize: 12.5,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginBottom: 16,
+    maxWidth: 280,
+  },
+  emptyAddBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#4F46E5',
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 14,
+    shadowColor: '#4F46E5',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  emptyAddBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
+    fontWeight: '800',
+  },
 
   noticeToast: {
     position: 'absolute',

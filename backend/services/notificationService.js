@@ -7,9 +7,27 @@ const notificationService = {
   /**
    * Create a notification record for a user
    */
-  async createNotification({ userId, title, message, type = 'INFO', relatedEntityId = null, scheduledTime = null }) {
+  async createNotification({ userId, title, message, type = 'INFO', relatedEntityId = null, scheduledTime = null, repeatUntilCompleted = true }) {
     try {
       if (!userId || !title || !message) return null;
+
+      // Check if an uncompleted notification already exists for this related entity
+      if (relatedEntityId) {
+        const existing = await Notification.findOne({
+          userId,
+          relatedEntityId,
+          completed: false,
+        });
+
+        if (existing) {
+          existing.title = title;
+          existing.message = message;
+          existing.scheduledTime = scheduledTime;
+          existing.lastAlertedAt = new Date();
+          await existing.save();
+          return existing;
+        }
+      }
 
       const notification = await Notification.create({
         userId,
@@ -19,6 +37,9 @@ const notificationService = {
         relatedEntityId,
         scheduledTime,
         read: false,
+        completed: false,
+        repeatUntilCompleted: repeatUntilCompleted ?? true,
+        lastAlertedAt: new Date(),
       });
 
       return notification;

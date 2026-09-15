@@ -12,6 +12,7 @@ import {
   Image,
   RefreshControl,
   ImageBackground,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import {
@@ -30,10 +31,11 @@ import {
   X,
   Check,
   UserRound,
+  Trash2,
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
-import { fetchAiGeneralAssistant, fetchUserProfile, fetchTasks } from '../../services/api';
+import { fetchAiGeneralAssistant, fetchUserProfile, fetchTasks, createTask, deleteTask, toggleTaskComplete } from '../../services/api';
 import { getToken, saveUser } from '../../services/storage';
 import Logo from '../../components/Logo';
 
@@ -175,10 +177,94 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
     }
   };
 
-  const toggleTask = (id) => {
+  const toggleTask = async (id) => {
+    const targetId = id;
     setTasks((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, done: !item.done } : item))
+      prev.map((item) => ((item._id || item.id) === targetId ? { ...item, done: !item.done } : item))
     );
+    try {
+      const token = await getToken();
+      if (token) {
+        await toggleTaskComplete(targetId, token);
+      }
+    } catch (err) {
+      console.log('Error toggling task on dashboard:', err);
+    }
+  };
+
+  const executeDeleteTask = async (id) => {
+    const targetId = id;
+    setTasks((prev) => prev.filter((item) => (item._id || item.id) !== targetId));
+    try {
+      const token = await getToken();
+      if (token) {
+        await deleteTask(targetId, token);
+      }
+    } catch (err) {
+      console.log('Error deleting task on dashboard:', err);
+    }
+  };
+
+  const confirmDeleteTask = (item) => {
+    const taskId = item._id || item.id;
+    const taskTitle = item.title || item.text || 'Task';
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Delete Task?\n\nAre you sure you want to delete "${taskTitle}"?`)) {
+        executeDeleteTask(taskId);
+      }
+    } else {
+      Alert.alert(
+        'Delete Task?',
+        `Are you sure you want to delete "${taskTitle}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => executeDeleteTask(taskId),
+          },
+        ],
+        { cancelable: true }
+      );
+    }
+  };
+
+  const handleClearCompletedTasks = () => {
+    const completedList = tasks.filter((i) => i.done);
+    if (completedList.length === 0) return;
+
+    const performClear = async () => {
+      const completedIds = completedList.map((t) => t._id || t.id);
+      setTasks((prev) => prev.filter((t) => !completedIds.includes(t._id || t.id)));
+      try {
+        const token = await getToken();
+        if (token) {
+          await Promise.all(completedIds.map((id) => deleteTask(id, token)));
+        }
+      } catch (err) {
+        console.log('Error clearing completed tasks on dashboard:', err);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Clear Completed Tasks?\n\nAre you sure you want to delete ${completedList.length} completed task(s)?`)) {
+        performClear();
+      }
+    } else {
+      Alert.alert(
+        'Clear Completed Tasks?',
+        `Are you sure you want to delete ${completedList.length} completed task(s)?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Clear All',
+            style: 'destructive',
+            onPress: performClear,
+          },
+        ],
+        { cancelable: true }
+      );
+    }
   };
 
   const toggleHabit = (id) => {
@@ -195,18 +281,33 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
     );
   };
 
-  const handleAddNewTask = () => {
+  const handleAddNewTask = async () => {
     if (!newTaskText.trim()) return;
+    const title = newTaskText.trim();
+    setNewTaskText('');
+    setShowAddTask(false);
+
+    try {
+      const token = await getToken();
+      if (token) {
+        const res = await createTask({ title, category: 'Task', status: 'PENDING' }, token);
+        if (res && res.success && res.task) {
+          setTasks((prev) => [res.task, ...prev]);
+          return;
+        }
+      }
+    } catch (e) {
+      console.log('Error creating task from dashboard:', e);
+    }
+
     const newItem = {
       id: Date.now().toString(),
-      title: newTaskText.trim(),
+      title,
       category: 'Task',
       done: false,
       time: 'Today',
     };
     setTasks((prev) => [newItem, ...prev]);
-    setNewTaskText('');
-    setShowAddTask(false);
   };
 
   const handleTabChange = (tabId) => {
@@ -457,21 +558,36 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
                 <Text style={styles.sectionSub}>PRIORITY QUEUE</Text>
                 <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Today's Tasks</Text>
               </View>
-              <Pressable
-                onPress={() => setShowAddTask(!showAddTask)}
-                style={({ pressed }) => [
-                  styles.addButton,
-                  isWeb && styles.webPointer,
-                  pressed && styles.pressedOpacity,
-                ]}
-              >
-                {showAddTask ? (
-                  <X size={14} color="#6366F1" strokeWidth={2.4} />
-                ) : (
-                  <Plus size={14} color="#6366F1" strokeWidth={2.4} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {completedTasksCount > 0 && (
+                  <Pressable
+                    onPress={handleClearCompletedTasks}
+                    style={({ pressed }) => [
+                      styles.clearCompletedButton,
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <Trash2 size={12} color="#EF4444" strokeWidth={2.2} />
+                    <Text style={styles.clearCompletedButtonText}>Clear Done</Text>
+                  </Pressable>
                 )}
-                <Text style={styles.addButtonText}>{showAddTask ? 'Close' : 'Add Task'}</Text>
-              </Pressable>
+                <Pressable
+                  onPress={() => setShowAddTask(!showAddTask)}
+                  style={({ pressed }) => [
+                    styles.addButton,
+                    isWeb && styles.webPointer,
+                    pressed && styles.pressedOpacity,
+                  ]}
+                >
+                  {showAddTask ? (
+                    <X size={14} color="#6366F1" strokeWidth={2.4} />
+                  ) : (
+                    <Plus size={14} color="#6366F1" strokeWidth={2.4} />
+                  )}
+                  <Text style={styles.addButtonText}>{showAddTask ? 'Close' : 'Add Task'}</Text>
+                </Pressable>
+              </View>
             </View>
 
             {/* Inline Quick Add Task */}
@@ -521,32 +637,62 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
               </View>
             ) : (
               <View style={styles.taskList}>
-                {tasks.map((item) => (
-                  <Pressable
-                    key={item.id}
-                    onPress={() => toggleTask(item.id)}
-                    style={({ pressed }) => [
-                      styles.taskItem,
-                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
-                      item.done && styles.taskItemDone,
-                      isWeb && styles.webPointer,
-                      pressed && styles.pressedOpacity,
-                    ]}
-                  >
-                    <View style={[styles.checkbox, item.done && styles.checkboxActive]}>
-                      {item.done && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
+                {tasks.map((item) => {
+                  const itemId = item._id || item.id;
+                  return (
+                    <View
+                      key={itemId}
+                      style={[
+                        styles.taskItem,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        item.done && styles.taskItemDone,
+                      ]}
+                    >
+                      <Pressable
+                        onPress={() => toggleTask(itemId)}
+                        style={({ pressed }) => [
+                          styles.checkbox,
+                          item.done && styles.checkboxActive,
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
+                        ]}
+                        hitSlop={8}
+                      >
+                        {item.done && <Check size={11} color="#FFFFFF" strokeWidth={3} />}
+                      </Pressable>
+
+                      <Pressable
+                        onPress={() => toggleTask(itemId)}
+                        style={({ pressed }) => [
+                          styles.taskTextWrapper,
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
+                        ]}
+                      >
+                        <Text style={[styles.taskTitle, { color: theme.colors.textPrimary }, item.done && styles.taskTitleDone]}>
+                          {item.title}
+                        </Text>
+                        <View style={styles.taskMetaRow}>
+                          <Text style={styles.taskCategoryBadge}>{item.category || 'Task'}</Text>
+                          <Text style={[styles.taskTimeText, { color: theme.colors.textMuted }]}>• {item.time || item.startTime || 'Today'}</Text>
+                        </View>
+                      </Pressable>
+
+                      {/* Quick Delete Trash Button */}
+                      <Pressable
+                        onPress={() => confirmDeleteTask(item)}
+                        hitSlop={8}
+                        style={({ pressed }) => [
+                          styles.taskDeleteBtn,
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
+                        ]}
+                      >
+                        <Trash2 size={13} color="#EF4444" strokeWidth={2.2} />
+                      </Pressable>
                     </View>
-                    <View style={styles.taskTextWrapper}>
-                      <Text style={[styles.taskTitle, { color: theme.colors.textPrimary }, item.done && styles.taskTitleDone]}>
-                        {item.title}
-                      </Text>
-                      <View style={styles.taskMetaRow}>
-                        <Text style={styles.taskCategoryBadge}>{item.category || 'Task'}</Text>
-                        <Text style={[styles.taskTimeText, { color: theme.colors.textMuted }]}>• {item.time || 'Today'}</Text>
-                      </View>
-                    </View>
-                  </Pressable>
-                ))}
+                  );
+                })}
               </View>
             )}
           </View>
@@ -1263,6 +1409,29 @@ const styles = StyleSheet.create({
   taskTimeText: {
     color: '#64748B',
     fontSize: 11,
+  },
+  taskDeleteBtn: {
+    padding: 6,
+    borderRadius: 8,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearCompletedButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+  },
+  clearCompletedButtonText: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontWeight: '700',
   },
   emptyStateBox: {
     alignItems: 'center',

@@ -225,6 +225,18 @@ exports.updateTask = async (req, res) => {
 
     await task.save();
 
+    const Notification = require('../models/Notification');
+    if (task.status === 'COMPLETED' || task.status === 'Completed') {
+      await Notification.updateMany(
+        { userId: req.user._id, relatedEntityId: task._id },
+        { $set: { completed: true, read: true, snoozedUntil: null } }
+      );
+    } else if (task.reminder) {
+      // Re-arm reminder notification if task is marked pending
+      const notificationService = require('../services/notificationService');
+      await notificationService.triggerTaskReminder(req.user._id, task);
+    }
+
     return res.status(200).json({
       success: true,
       message: 'Task updated successfully',
@@ -264,6 +276,9 @@ exports.deleteTask = async (req, res) => {
         message: 'Task not found',
       });
     }
+
+    const Notification = require('../models/Notification');
+    await Notification.deleteMany({ userId: req.user._id, relatedEntityId: id });
 
     return res.status(200).json({
       success: true,
@@ -319,6 +334,17 @@ exports.toggleTask = async (req, res) => {
     }
 
     await task.save();
+
+    const Notification = require('../models/Notification');
+    if (task.status === 'COMPLETED' || task.status === 'Completed') {
+      await Notification.updateMany(
+        { userId: req.user._id, relatedEntityId: task._id },
+        { $set: { completed: true, read: true, snoozedUntil: null } }
+      );
+    } else if (task.reminder) {
+      const notificationService = require('../services/notificationService');
+      await notificationService.triggerTaskReminder(req.user._id, task);
+    }
 
     return res.status(200).json({
       success: true,

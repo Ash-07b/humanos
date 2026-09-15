@@ -31,6 +31,7 @@ import {
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useReminders } from '../../contexts/ReminderContext';
 import {
   createTask,
   fetchTasks,
@@ -50,6 +51,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   const isWeb = Platform.OS === 'web';
   const isDesktop = isWeb && width >= 768;
   const { theme, isDarkMode } = useTheme();
+  const { checkReminders } = useReminders();
 
   // Active Tab for navigation
   const [activeTab, setActiveTab] = useState('tasks');
@@ -86,7 +88,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   // Notice feedback tooltip
   const [noticeMessage, setNoticeMessage] = useState('');
 
-  // Form State for Task Creation & Editing (Start Time & End Time with placeholders, NO Due Date, NO Priority)
+  // Form State for Task Creation
   const [taskTitle, setTaskTitle] = useState('');
   const [taskDescription, setTaskDescription] = useState('');
   const [taskStartTime, setTaskStartTime] = useState('');
@@ -94,6 +96,16 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
   const [taskCategory, setTaskCategory] = useState('Work');
   const [taskReminder, setTaskReminder] = useState(true);
   const [titleError, setTitleError] = useState('');
+
+  // Dedicated Form State for Task Editing
+  const [editTaskTitle, setEditTaskTitle] = useState('');
+  const [editTaskDescription, setEditTaskDescription] = useState('');
+  const [editTaskStartTime, setEditTaskStartTime] = useState('');
+  const [editTaskEndTime, setEditTaskEndTime] = useState('');
+  const [editTaskCategory, setEditTaskCategory] = useState('Work');
+  const [editTaskReminder, setEditTaskReminder] = useState(true);
+  const [editTitleError, setEditTitleError] = useState('');
+  const [timePickerContext, setTimePickerContext] = useState('create'); // 'create' | 'edit'
 
   // Tasks state (dynamically bound to backend API and database user)
   const [tasks, setTasks] = useState(user?.tasks || []);
@@ -193,38 +205,59 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     }
   };
 
-  // Helper to parse time string (e.g. "09:30 AM") into { hour, minute, period }
+  // Helper to parse 24-hour or 12-hour time string into { hour, minute }
   const parseTimeString = (str) => {
     if (!str || typeof str !== 'string' || !str.trim()) {
-      return { hour: 9, minute: 0, period: 'AM' };
+      const now = new Date();
+      return { hour: now.getHours(), minute: now.getMinutes() };
     }
-    const parts = str.trim().split(' ');
-    const period = parts[1]?.toUpperCase() === 'PM' ? 'PM' : 'AM';
-    const timeParts = parts[0]?.split(':') || ['9', '0'];
-    const hr = parseInt(timeParts[0], 10) || 9;
-    const min = parseInt(timeParts[1], 10) || 0;
-    return { hour: hr, minute: min, period };
+    const raw = str.trim();
+    // 12-hour with AM/PM e.g. "07:30 PM"
+    const match12 = raw.match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
+    if (match12 && match12[3]) {
+      let hr = parseInt(match12[1], 10) || 0;
+      const min = parseInt(match12[2], 10) || 0;
+      const ampm = match12[3].toLowerCase();
+      if (ampm === 'pm' && hr < 12) hr += 12;
+      if (ampm === 'am' && hr === 12) hr = 0;
+      return { hour: Math.min(23, Math.max(0, hr)), minute: Math.min(59, Math.max(0, min)) };
+    }
+    // 24-hour e.g. "19:30" or "09:00"
+    const parts = raw.split(':');
+    const hr = parseInt(parts[0], 10) || 0;
+    const min = parseInt(parts[1], 10) || 0;
+    return { hour: Math.min(23, Math.max(0, hr)), minute: Math.min(59, Math.max(0, min)) };
   };
 
   // Open Clock / Time Picker Modal
-  const handleOpenTimePicker = (target) => {
+  const handleOpenTimePicker = (target, context = 'create') => {
     setTimePickerTarget(target);
-    const timeVal = target === 'start' ? taskStartTime : taskEndTime;
+    setTimePickerContext(context);
+    const timeVal = context === 'edit'
+      ? (target === 'start' ? editTaskStartTime : editTaskEndTime)
+      : (target === 'start' ? taskStartTime : taskEndTime);
     const parsed = parseTimeString(timeVal);
     setPickerHour(parsed.hour);
     setPickerMinute(parsed.minute);
-    setPickerPeriod(parsed.period);
     setPickerMode('hour');
     setTimePickerModalVisible(true);
   };
 
-  // Apply selected time from Clock Modal
+  // Apply selected 24-Hour time from Clock Modal
   const handleApplyTimePicker = () => {
-    const formatted = `${String(pickerHour).padStart(2, '0')}:${String(pickerMinute).padStart(2, '0')} ${pickerPeriod}`;
-    if (timePickerTarget === 'start') {
-      setTaskStartTime(formatted);
+    const formatted = `${String(pickerHour).padStart(2, '0')}:${String(pickerMinute).padStart(2, '0')}`;
+    if (timePickerContext === 'edit') {
+      if (timePickerTarget === 'start') {
+        setEditTaskStartTime(formatted);
+      } else {
+        setEditTaskEndTime(formatted);
+      }
     } else {
-      setTaskEndTime(formatted);
+      if (timePickerTarget === 'start') {
+        setTaskStartTime(formatted);
+      } else {
+        setTaskEndTime(formatted);
+      }
     }
     setTimePickerModalVisible(false);
   };
@@ -317,6 +350,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
           );
         }
       }
+      checkReminders?.();
     } catch (err) {
       console.log('[HumanOS Tasks] Error toggling task:', err.message);
     }
@@ -332,6 +366,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
       if (token) {
         await deleteTask(taskId, token);
       }
+      checkReminders?.();
     } catch (err) {
       console.log('[HumanOS Tasks] Error deleting task:', err.message);
     }
@@ -354,6 +389,47 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
             text: 'Delete',
             style: 'destructive',
             onPress: () => executeDeleteTask(taskId),
+          },
+        ],
+        { cancelable: true }
+      );
+    }
+  };
+
+  // Clear all completed tasks at once
+  const handleClearAllCompleted = () => {
+    const completedList = tasks.filter((t) => t.done || t.status === 'COMPLETED');
+    if (completedList.length === 0) return;
+
+    const performClear = async () => {
+      const completedIds = completedList.map((t) => t._id || t.id);
+      setTasks((prev) => prev.filter((t) => !completedIds.includes(t._id || t.id)));
+      showNotice(`${completedList.length} completed task(s) cleared`);
+      try {
+        const token = await getToken();
+        if (token) {
+          await Promise.all(completedIds.map((id) => deleteTask(id, token)));
+        }
+        checkReminders?.();
+      } catch (err) {
+        console.log('[HumanOS Tasks] Error clearing completed tasks:', err.message);
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Clear All Completed Tasks?\n\nAre you sure you want to permanently delete ${completedList.length} completed task(s)?`)) {
+        performClear();
+      }
+    } else {
+      Alert.alert(
+        'Clear Completed Tasks?',
+        `Are you sure you want to delete ${completedList.length} completed task(s)?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Clear All',
+            style: 'destructive',
+            onPress: performClear,
           },
         ],
         { cancelable: true }
@@ -401,6 +477,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
           setCreateModalVisible(false);
           showNotice('Task created with start reminder');
           loadNotifications();
+          checkReminders?.(true);
           return;
         }
       }
@@ -417,38 +494,44 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
     setTasks((prev) => [newTask, ...prev]);
     setCreateModalVisible(false);
     showNotice('Task added successfully');
+    checkReminders?.(true);
   };
 
   // Open Edit Modal
   const openEditModal = (task) => {
+    if (!task) return;
     setSelectedTask(task);
-    setTaskTitle(task.title || '');
-    setTaskDescription(task.description || '');
-    setTaskStartTime(task.startTime || task.dueTime || '');
-    setTaskEndTime(task.endTime || '');
-    setTaskCategory(task.category || 'Work');
-    setTaskReminder(task.reminder ?? true);
-    setTitleError('');
+    setEditTaskTitle(task.title || '');
+    setEditTaskDescription(task.description || '');
+    setEditTaskStartTime(task.startTime || task.dueTime || '');
+    setEditTaskEndTime(task.endTime || '');
+    setEditTaskCategory(task.category || 'Work');
+    setEditTaskReminder(task.reminder ?? true);
+    setEditTitleError('');
     setOptionsModalVisible(false);
-    setEditModalVisible(true);
+    // Short timeout to let options modal backdrop dismiss cleanly on web and mobile
+    setTimeout(() => {
+      setEditModalVisible(true);
+    }, 60);
   };
 
   // Save Edited Task to Backend
   const handleSaveEditTask = async () => {
-    if (!taskTitle.trim()) {
-      setTitleError('Please enter a task title.');
+    if (!editTaskTitle.trim()) {
+      setEditTitleError('Please enter a task title.');
       return;
     }
 
+    if (!selectedTask) return;
     const taskId = selectedTask._id || selectedTask.id;
     const updatePayload = {
-      title: taskTitle.trim(),
-      description: taskDescription.trim(),
-      startTime: taskStartTime.trim(),
-      endTime: taskEndTime.trim(),
-      dueTime: taskStartTime.trim() || '',
-      category: taskCategory,
-      reminder: taskReminder,
+      title: editTaskTitle.trim(),
+      description: editTaskDescription.trim(),
+      startTime: editTaskStartTime.trim(),
+      endTime: editTaskEndTime.trim(),
+      dueTime: editTaskStartTime.trim() || '',
+      category: editTaskCategory,
+      reminder: editTaskReminder,
     };
 
     // Optimistic update
@@ -472,6 +555,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
           );
         }
       }
+      checkReminders?.();
     } catch (err) {
       console.log('[HumanOS Tasks] Error updating task on backend:', err.message);
     }
@@ -507,7 +591,21 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
         const title = (t?.title || '').toLowerCase();
         const desc = (t?.description || '').toLowerCase();
         const cat = (t?.category || '').toLowerCase();
-        return title.includes(q) || desc.includes(q) || cat.includes(q);
+        const start = (t?.startTime || '').toLowerCase();
+        const end = (t?.endTime || '').toLowerCase();
+        const due = (t?.dueTime || '').toLowerCase();
+        const status = (t?.status || '').toLowerCase();
+        const doneStr = t?.done ? 'completed done' : 'pending active';
+        return (
+          title.includes(q) ||
+          desc.includes(q) ||
+          cat.includes(q) ||
+          start.includes(q) ||
+          end.includes(q) ||
+          due.includes(q) ||
+          status.includes(q) ||
+          doneStr.includes(q)
+        );
       });
     }
 
@@ -565,25 +663,6 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
             <View style={styles.headerActionRow}>
               <Pressable
                 onPress={() => {
-                  setSearchVisible(!searchVisible);
-                  if (searchVisible) setSearchQuery('');
-                }}
-                style={({ pressed }) => [
-                  styles.headerIconBtn,
-                  searchVisible && styles.headerIconBtnActive,
-                  isWeb && styles.webPointer,
-                  pressed && styles.pressedOpacity,
-                ]}
-              >
-                {searchVisible ? (
-                  <X size={18} color="#94A3B8" strokeWidth={2.2} />
-                ) : (
-                  <Search size={18} color="#94A3B8" strokeWidth={2.2} />
-                )}
-              </Pressable>
-
-              <Pressable
-                onPress={() => {
                   setNotificationsModalVisible(true);
                   loadNotifications();
                 }}
@@ -607,25 +686,22 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
             </View>
           </View>
 
-          {/* Inline Search Bar (Toggled) */}
-          {searchVisible && (
-            <View style={[styles.searchBarContainer, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF', borderColor: isDarkMode ? '#334155' : '#E2E8F0' }]}>
-              <Search size={15} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
-              <TextInput
-                style={[styles.searchInput, { color: isDarkMode ? '#F8FAFC' : '#0F172A' }, isWeb && styles.webOutlineNone]}
-                placeholder="Search tasks by title or category..."
-                placeholderTextColor="#94A3B8"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                autoFocus
-              />
-              {!!searchQuery && (
-                <Pressable onPress={() => setSearchQuery('')} style={styles.searchClearBtn}>
-                  <X size={14} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
-                </Pressable>
-              )}
-            </View>
-          )}
+          {/* Search Bar - Permanently Visible & Fully Interactive */}
+          <View style={[styles.searchBarContainer, { backgroundColor: isDarkMode ? '#1E293B' : '#FFFFFF', borderColor: isDarkMode ? '#334155' : '#E2E8F0' }]}>
+            <Search size={15} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
+            <TextInput
+              style={[styles.searchInput, { color: isDarkMode ? '#F8FAFC' : '#0F172A' }, isWeb && styles.webOutlineNone]}
+              placeholder="Search tasks by title, category, time, or status..."
+              placeholderTextColor="#94A3B8"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {!!searchQuery && (
+              <Pressable onPress={() => setSearchQuery('')} hitSlop={6} style={styles.searchClearBtn}>
+                <X size={14} color={isDarkMode ? '#94A3B8' : '#64748B'} strokeWidth={2.2} />
+              </Pressable>
+            )}
+          </View>
 
           {/* Glowing Ambient Accent Orbs */}
           <View style={styles.orbGreen} />
@@ -773,21 +849,45 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
             {filteredTasks.length === 0 ? (
               <View style={[styles.emptyStateBox, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
                 <View style={styles.emptyStateIconCircle}>
-                  <Sparkles size={24} color="#6366F1" strokeWidth={2} />
+                  {searchQuery.trim() ? (
+                    <Search size={22} color="#6366F1" strokeWidth={2.2} />
+                  ) : (
+                    <Sparkles size={24} color="#6366F1" strokeWidth={2} />
+                  )}
                 </View>
-                <Text style={[styles.emptyStateTitle, { color: theme.colors.textPrimary }]}>No tasks in this list</Text>
-                <Text style={[styles.emptyStateDesc, { color: theme.colors.textSecondary }]}>Add a new task with start and end times.</Text>
-                <Pressable
-                  onPress={openCreateModal}
-                  style={({ pressed }) => [
-                    styles.emptyStateActionBtn,
-                    isWeb && styles.webPointer,
-                    pressed && styles.pressedOpacity,
-                  ]}
-                >
-                  <Plus size={13} color="#FFFFFF" strokeWidth={2.5} />
-                  <Text style={styles.emptyStateActionText}>Add Task</Text>
-                </Pressable>
+                <Text style={[styles.emptyStateTitle, { color: theme.colors.textPrimary }]}>
+                  {searchQuery.trim() ? 'No matching tasks found' : 'No tasks in this list'}
+                </Text>
+                <Text style={[styles.emptyStateDesc, { color: theme.colors.textSecondary }]}>
+                  {searchQuery.trim()
+                    ? `No tasks match "${searchQuery}". Try a different search term or category.`
+                    : 'Add a new task with start and end times.'}
+                </Text>
+                {searchQuery.trim() ? (
+                  <Pressable
+                    onPress={() => setSearchQuery('')}
+                    style={({ pressed }) => [
+                      styles.emptyStateActionBtn,
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <X size={13} color="#FFFFFF" strokeWidth={2.5} />
+                    <Text style={styles.emptyStateActionText}>Clear Search</Text>
+                  </Pressable>
+                ) : (
+                  <Pressable
+                    onPress={openCreateModal}
+                    style={({ pressed }) => [
+                      styles.emptyStateActionBtn,
+                      isWeb && styles.webPointer,
+                      pressed && styles.pressedOpacity,
+                    ]}
+                  >
+                    <Plus size={13} color="#FFFFFF" strokeWidth={2.5} />
+                    <Text style={styles.emptyStateActionText}>Add Task</Text>
+                  </Pressable>
+                )}
               </View>
             ) : (
               <View style={styles.tasksListContainer}>
@@ -876,7 +976,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                         </View>
                       </Pressable>
 
-                      {/* If Completed: Quick Undo & Edit Buttons for mistake recovery */}
+                      {/* If Completed: Quick Undo, Edit & Delete Buttons for mistake recovery & cleanup */}
                       {isDone ? (
                         <View style={styles.quickCompletedActions}>
                           <Pressable
@@ -902,6 +1002,19 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                             ]}
                           >
                             <Pencil size={11} color="#64748B" strokeWidth={2.2} />
+                          </Pressable>
+
+                          <Pressable
+                            onPress={() => confirmDeleteTask(task)}
+                            hitSlop={8}
+                            style={({ pressed }) => [
+                              styles.deleteMiniBtn,
+                              { backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2', borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.3)' : '#FECACA' },
+                              isWeb && styles.webPointer,
+                              pressed && styles.pressedOpacity,
+                            ]}
+                          >
+                            <Trash2 size={11} color="#EF4444" strokeWidth={2.4} />
                           </Pressable>
                         </View>
                       ) : (
@@ -935,6 +1048,17 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   <Text style={styles.sectionSubTitle}>COMPLETED LOG</Text>
                   <Text style={[styles.sectionMainTitle, { color: theme.colors.textPrimary }]}>Completed Tasks</Text>
                 </View>
+                <Pressable
+                  onPress={handleClearAllCompleted}
+                  style={({ pressed }) => [
+                    styles.clearCompletedHeaderBtn,
+                    isWeb && styles.webPointer,
+                    pressed && styles.pressedOpacity,
+                  ]}
+                >
+                  <Trash2 size={12} color="#EF4444" strokeWidth={2.2} />
+                  <Text style={styles.clearCompletedHeaderText}>Clear All</Text>
+                </Pressable>
               </View>
 
               <View style={styles.completedList}>
@@ -952,7 +1076,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                         </Text>
                       </View>
 
-                      {/* Undo / Edit Buttons for Mistake recovery */}
+                      {/* Undo / Edit / Delete Buttons for Mistake recovery & Cleanup */}
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                         <Pressable
                           onPress={() => toggleTask(itemId)}
@@ -976,6 +1100,18 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                           ]}
                         >
                           <Pencil size={11} color="#64748B" strokeWidth={2.2} />
+                        </Pressable>
+                        <Pressable
+                          onPress={() => confirmDeleteTask(item)}
+                          hitSlop={8}
+                          style={({ pressed }) => [
+                            styles.deleteMiniBtn,
+                            { backgroundColor: isDarkMode ? 'rgba(239, 68, 68, 0.15)' : '#FEE2E2', borderColor: isDarkMode ? 'rgba(239, 68, 68, 0.3)' : '#FECACA' },
+                            isWeb && styles.webPointer,
+                            pressed && styles.pressedOpacity,
+                          ]}
+                        >
+                          <Trash2 size={11} color="#EF4444" strokeWidth={2.4} />
                         </Pressable>
                       </View>
                     </View>
@@ -1066,7 +1202,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
 
               {/* Start Time with Clock Picker Trigger */}
               <View style={styles.modalInputGroup}>
-                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Start Time</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Start Time (24h)</Text>
                 <View style={styles.timeInputRow}>
                   <TextInput
                     style={[
@@ -1077,7 +1213,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                     ]}
                     value={taskStartTime}
                     onChangeText={setTaskStartTime}
-                    placeholder="e.g. 09:00 AM"
+                    placeholder="e.g. 19:30 or 08:00"
                     placeholderTextColor="#94A3B8"
                   />
                   <Pressable
@@ -1096,7 +1232,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
 
               {/* End Time with Clock Picker Trigger */}
               <View style={styles.modalInputGroup}>
-                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>End Time</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>End Time (24h)</Text>
                 <View style={styles.timeInputRow}>
                   <TextInput
                     style={[
@@ -1107,7 +1243,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                     ]}
                     value={taskEndTime}
                     onChangeText={setTaskEndTime}
-                    placeholder="e.g. 10:00 AM"
+                    placeholder="e.g. 20:30 or 09:00"
                     placeholderTextColor="#94A3B8"
                   />
                   <Pressable
@@ -1204,228 +1340,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
         </View>
       </Modal>
 
-      {/* ==================== 7. INTERACTIVE CLOCK / TIME PICKER MODAL ==================== */}
-      <Modal
-        visible={timePickerModalVisible}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setTimePickerModalVisible(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.timePickerModalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
-            {/* Header */}
-            <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
-              <View>
-                <Text style={styles.modalKicker}>INTERACTIVE CLOCK</Text>
-                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
-                  {timePickerTarget === 'start' ? 'Select Start Time' : 'Select End Time'}
-                </Text>
-              </View>
-              <Pressable
-                onPress={() => setTimePickerModalVisible(false)}
-                style={[styles.modalCloseBtn, { backgroundColor: theme.colors.cardAltBg }]}
-              >
-                <X size={18} color="#94A3B8" strokeWidth={2.2} />
-              </Pressable>
-            </View>
-
-            {/* Digital Clock Readout */}
-            <View style={styles.clockDigitalDisplay}>
-              <View style={styles.clockDigitsRow}>
-                <Pressable
-                  onPress={() => setPickerMode('hour')}
-                  style={[
-                    styles.clockDigitBox,
-                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
-                    pickerMode === 'hour' && styles.clockDigitBoxActive,
-                  ]}
-                >
-                  <Text style={[styles.clockDigitText, { color: theme.colors.textPrimary }, pickerMode === 'hour' && styles.clockDigitTextActive]}>
-                    {String(pickerHour).padStart(2, '0')}
-                  </Text>
-                  <Text style={[styles.clockDigitSub, { color: theme.colors.textMuted }, pickerMode === 'hour' && styles.clockDigitSubActive]}>
-                    HOUR
-                  </Text>
-                </Pressable>
-
-                <Text style={[styles.clockColon, { color: theme.colors.textPrimary }]}>:</Text>
-
-                <Pressable
-                  onPress={() => setPickerMode('minute')}
-                  style={[
-                    styles.clockDigitBox,
-                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
-                    pickerMode === 'minute' && styles.clockDigitBoxActive,
-                  ]}
-                >
-                  <Text style={[styles.clockDigitText, { color: theme.colors.textPrimary }, pickerMode === 'minute' && styles.clockDigitTextActive]}>
-                    {String(pickerMinute).padStart(2, '0')}
-                  </Text>
-                  <Text style={[styles.clockDigitSub, { color: theme.colors.textMuted }, pickerMode === 'minute' && styles.clockDigitSubActive]}>
-                    MIN
-                  </Text>
-                </Pressable>
-              </View>
-
-              {/* AM / PM Switcher */}
-              <View style={[styles.clockAmPmContainer, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
-                <Pressable
-                  onPress={() => setPickerPeriod('AM')}
-                  style={[
-                    styles.clockAmPmBtn,
-                    pickerPeriod === 'AM' && styles.clockAmPmBtnActive,
-                  ]}
-                >
-                  <Text style={[styles.clockAmPmText, { color: theme.colors.textSecondary }, pickerPeriod === 'AM' && styles.clockAmPmTextActive]}>
-                    AM
-                  </Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => setPickerPeriod('PM')}
-                  style={[
-                    styles.clockAmPmBtn,
-                    pickerPeriod === 'PM' && styles.clockAmPmBtnActive,
-                  ]}
-                >
-                  <Text style={[styles.clockAmPmText, { color: theme.colors.textSecondary }, pickerPeriod === 'PM' && styles.clockAmPmTextActive]}>
-                    PM
-                  </Text>
-                </Pressable>
-              </View>
-            </View>
-
-            {/* Mode Selector Tabs */}
-            <View style={styles.clockModeTabsRow}>
-              <Pressable
-                onPress={() => setPickerMode('hour')}
-                style={[styles.clockModeTab, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }, pickerMode === 'hour' && styles.clockModeTabActive]}
-              >
-                <Text style={[styles.clockModeTabText, { color: theme.colors.textSecondary }, pickerMode === 'hour' && styles.clockModeTabTextActive]}>
-                  Hour (1 - 12)
-                </Text>
-              </Pressable>
-              <Pressable
-                onPress={() => setPickerMode('minute')}
-                style={[styles.clockModeTab, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }, pickerMode === 'minute' && styles.clockModeTabActive]}
-              >
-                <Text style={[styles.clockModeTabText, { color: theme.colors.textSecondary }, pickerMode === 'minute' && styles.clockModeTabTextActive]}>
-                  Minute (00 - 55)
-                </Text>
-              </Pressable>
-            </View>
-
-            {/* Clock Grid */}
-            {pickerMode === 'hour' ? (
-              <View style={styles.clockGrid}>
-                {[12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((hr) => {
-                  const isSelected = pickerHour === hr;
-                  return (
-                    <Pressable
-                      key={`hr-${hr}`}
-                      onPress={() => {
-                        setPickerHour(hr);
-                        setPickerMode('minute');
-                      }}
-                      style={({ pressed }) => [
-                        styles.clockCell,
-                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
-                        isSelected && styles.clockCellSelected,
-                        isWeb && styles.webPointer,
-                        pressed && styles.pressedOpacity,
-                      ]}
-                    >
-                      <Text style={[styles.clockCellText, { color: theme.colors.textPrimary }, isSelected && styles.clockCellTextSelected]}>
-                        {hr}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-            ) : (
-              <View>
-                <View style={styles.clockGrid}>
-                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((min) => {
-                    const isSelected = pickerMinute === min;
-                    return (
-                      <Pressable
-                        key={`min-${min}`}
-                        onPress={() => setPickerMinute(min)}
-                        style={({ pressed }) => [
-                          styles.clockCell,
-                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
-                          isSelected && styles.clockCellSelected,
-                          isWeb && styles.webPointer,
-                          pressed && styles.pressedOpacity,
-                        ]}
-                      >
-                        <Text style={[styles.clockCellText, { color: theme.colors.textPrimary }, isSelected && styles.clockCellTextSelected]}>
-                          {String(min).padStart(2, '0')}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-
-                {/* Fine minute adjustment */}
-                <View style={styles.minuteAdjustRow}>
-                  <Pressable
-                    onPress={() => setPickerMinute((prev) => (prev > 0 ? prev - 1 : 59))}
-                    style={[styles.minuteAdjustBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
-                  >
-                    <Text style={[styles.minuteAdjustBtnText, { color: theme.colors.textPrimary }]}>-1 Min</Text>
-                  </Pressable>
-                  <Text style={[styles.minuteAdjustLabel, { color: theme.colors.textMuted }]}>
-                    Exact: {String(pickerMinute).padStart(2, '0')}m
-                  </Text>
-                  <Pressable
-                    onPress={() => setPickerMinute((prev) => (prev < 59 ? prev + 1 : 0))}
-                    style={[styles.minuteAdjustBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
-                  >
-                    <Text style={[styles.minuteAdjustBtnText, { color: theme.colors.textPrimary }]}>+1 Min</Text>
-                  </Pressable>
-                </View>
-              </View>
-            )}
-
-            {/* Quick Preset Time Chips */}
-            <View style={styles.clockQuickPresetsRow}>
-              {['09:00 AM', '12:00 PM', '02:30 PM', '05:00 PM'].map((preset) => (
-                <Pressable
-                  key={preset}
-                  onPress={() => {
-                    const parsed = parseTimeString(preset);
-                    setPickerHour(parsed.hour);
-                    setPickerMinute(parsed.minute);
-                    setPickerPeriod(parsed.period);
-                  }}
-                  style={[styles.clockPresetChip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
-                >
-                  <Text style={[styles.clockPresetChipText, { color: theme.colors.textSecondary }]}>{preset}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            {/* Modal Actions */}
-            <View style={styles.clockActionsRow}>
-              <Pressable
-                onPress={() => setTimePickerModalVisible(false)}
-                style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
-              >
-                <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
-              </Pressable>
-
-              <Pressable
-                onPress={handleApplyTimePicker}
-                style={[styles.modalSubmitBtn, { backgroundColor: '#4F46E5' }]}
-              >
-                <Text style={styles.modalSubmitText}>Set Time</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* ==================== 8. TASK OPTIONS SHEET ==================== */}
+      {/* ==================== 7. TASK OPTIONS SHEET ==================== */}
       <Modal
         visible={optionsModalVisible}
         transparent
@@ -1501,7 +1416,7 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
         </Pressable>
       </Modal>
 
-      {/* ==================== 9. EDIT TASK MODAL ==================== */}
+      {/* ==================== 8. EDIT TASK MODAL ==================== */}
       <Modal
         visible={editModalVisible}
         transparent
@@ -1535,16 +1450,18 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   style={[
                     styles.modalInput,
                     { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
-                    !!titleError && styles.modalInputError,
+                    !!editTitleError && styles.modalInputError,
                     isWeb && styles.webOutlineNone,
                   ]}
-                  value={taskTitle}
+                  value={editTaskTitle}
                   onChangeText={(text) => {
-                    setTaskTitle(text);
-                    if (titleError) setTitleError('');
+                    setEditTaskTitle(text);
+                    if (editTitleError) setEditTitleError('');
                   }}
+                  placeholder="e.g. Complete quarterly report"
+                  placeholderTextColor="#94A3B8"
                 />
-                {!!titleError && <Text style={styles.modalErrorText}>{titleError}</Text>}
+                {!!editTitleError && <Text style={styles.modalErrorText}>{editTitleError}</Text>}
               </View>
 
               <View style={styles.modalInputGroup}>
@@ -1556,16 +1473,18 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                     { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
                     isWeb && styles.webOutlineNone,
                   ]}
-                  value={taskDescription}
-                  onChangeText={setTaskDescription}
+                  value={editTaskDescription}
+                  onChangeText={setEditTaskDescription}
+                  placeholder="Task description / notes..."
+                  placeholderTextColor="#94A3B8"
                   multiline
                   numberOfLines={3}
                 />
               </View>
 
-              {/* Start Time */}
+              {/* Start Time with Clock Picker */}
               <View style={styles.modalInputGroup}>
-                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Start Time</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Start Time (24h)</Text>
                 <View style={styles.timeInputRow}>
                   <TextInput
                     style={[
@@ -1574,13 +1493,13 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                       { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
                       isWeb && styles.webOutlineNone,
                     ]}
-                    value={taskStartTime}
-                    onChangeText={setTaskStartTime}
-                    placeholder="e.g. 09:00 AM"
+                    value={editTaskStartTime}
+                    onChangeText={setEditTaskStartTime}
+                    placeholder="e.g. 19:30 or 08:00"
                     placeholderTextColor="#94A3B8"
                   />
                   <Pressable
-                    onPress={() => handleOpenTimePicker('start')}
+                    onPress={() => handleOpenTimePicker('start', 'edit')}
                     style={({ pressed }) => [
                       styles.clockIconBtn,
                       { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
@@ -1593,9 +1512,9 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 </View>
               </View>
 
-              {/* End Time */}
+              {/* End Time with Clock Picker */}
               <View style={styles.modalInputGroup}>
-                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>End Time</Text>
+                <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>End Time (24h)</Text>
                 <View style={styles.timeInputRow}>
                   <TextInput
                     style={[
@@ -1604,13 +1523,13 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                       { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border, color: theme.colors.textPrimary },
                       isWeb && styles.webOutlineNone,
                     ]}
-                    value={taskEndTime}
-                    onChangeText={setTaskEndTime}
-                    placeholder="e.g. 10:00 AM"
+                    value={editTaskEndTime}
+                    onChangeText={setEditTaskEndTime}
+                    placeholder="e.g. 20:30 or 09:00"
                     placeholderTextColor="#94A3B8"
                   />
                   <Pressable
-                    onPress={() => handleOpenTimePicker('end')}
+                    onPress={() => handleOpenTimePicker('end', 'edit')}
                     style={({ pressed }) => [
                       styles.clockIconBtn,
                       { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
@@ -1628,11 +1547,11 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 <Text style={[styles.modalInputLabel, { color: theme.colors.textPrimary }]}>Category</Text>
                 <View style={styles.modalChipRow}>
                   {categoryOptions.map((c) => {
-                    const isCatSelected = taskCategory === c;
+                    const isCatSelected = editTaskCategory === c;
                     return (
                       <Pressable
                         key={c}
-                        onPress={() => setTaskCategory(c)}
+                        onPress={() => setEditTaskCategory(c)}
                         style={[
                           styles.modalChip,
                           { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
@@ -1665,8 +1584,8 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                   </Text>
                 </View>
                 <Switch
-                  value={taskReminder}
-                  onValueChange={setTaskReminder}
+                  value={editTaskReminder}
+                  onValueChange={setEditTaskReminder}
                   trackColor={{ false: '#CBD5E1', true: '#4F46E5' }}
                   thumbColor="#FFFFFF"
                 />
@@ -1698,6 +1617,234 @@ export default function TasksScreen({ user, onLogout, onNavigateTab, navigation 
                 </Pressable>
               </View>
             </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ==================== 9. INTERACTIVE CLOCK / TIME PICKER MODAL (Rendered On Top) ==================== */}
+      <Modal
+        visible={timePickerModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setTimePickerModalVisible(false)}
+      >
+        <View style={[styles.modalOverlay, { zIndex: 99999 }]}>
+          <View style={[styles.timePickerModalCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border, zIndex: 100000, elevation: 20 }]}>
+            {/* Header */}
+            <View style={[styles.modalHeader, { borderBottomColor: theme.colors.border }]}>
+              <View>
+                <Text style={styles.modalKicker}>24-HOUR CLOCK PICKER</Text>
+                <Text style={[styles.modalTitle, { color: theme.colors.textPrimary }]}>
+                  {timePickerTarget === 'start' ? 'Select Start Time' : 'Select End Time'}
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => setTimePickerModalVisible(false)}
+                style={[styles.modalCloseBtn, { backgroundColor: theme.colors.cardAltBg }]}
+              >
+                <X size={18} color="#94A3B8" strokeWidth={2.2} />
+              </Pressable>
+            </View>
+
+            {/* Digital 24-Hour Readout */}
+            <View style={styles.clockDigitalDisplay}>
+              <View style={styles.clockDigitsRow}>
+                <Pressable
+                  onPress={() => setPickerMode('hour')}
+                  style={[
+                    styles.clockDigitBox,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                    pickerMode === 'hour' && styles.clockDigitBoxActive,
+                  ]}
+                >
+                  <Text style={[styles.clockDigitText, { color: theme.colors.textPrimary }, pickerMode === 'hour' && styles.clockDigitTextActive]}>
+                    {String(pickerHour).padStart(2, '0')}
+                  </Text>
+                  <Text style={[styles.clockDigitSub, { color: theme.colors.textMuted }, pickerMode === 'hour' && styles.clockDigitSubActive]}>
+                    HOUR (24h)
+                  </Text>
+                </Pressable>
+
+                <Text style={[styles.clockColon, { color: theme.colors.textPrimary }]}>:</Text>
+
+                <Pressable
+                  onPress={() => setPickerMode('minute')}
+                  style={[
+                    styles.clockDigitBox,
+                    { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                    pickerMode === 'minute' && styles.clockDigitBoxActive,
+                  ]}
+                >
+                  <Text style={[styles.clockDigitText, { color: theme.colors.textPrimary }, pickerMode === 'minute' && styles.clockDigitTextActive]}>
+                    {String(pickerMinute).padStart(2, '0')}
+                  </Text>
+                  <Text style={[styles.clockDigitSub, { color: theme.colors.textMuted }, pickerMode === 'minute' && styles.clockDigitSubActive]}>
+                    MIN
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            {/* Mode Selector Tabs */}
+            <View style={styles.clockModeTabsRow}>
+              <Pressable
+                onPress={() => setPickerMode('hour')}
+                style={[styles.clockModeTab, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }, pickerMode === 'hour' && styles.clockModeTabActive]}
+              >
+                <Text style={[styles.clockModeTabText, { color: theme.colors.textSecondary }, pickerMode === 'hour' && styles.clockModeTabTextActive]}>
+                  Hours (00 - 23)
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setPickerMode('minute')}
+                style={[styles.clockModeTab, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }, pickerMode === 'minute' && styles.clockModeTabActive]}
+              >
+                <Text style={[styles.clockModeTabText, { color: theme.colors.textSecondary }, pickerMode === 'minute' && styles.clockModeTabTextActive]}>
+                  Minutes (00 - 55)
+                </Text>
+              </Pressable>
+            </View>
+
+            {/* Clock Grid */}
+            {pickerMode === 'hour' ? (
+              <ScrollView style={{ maxHeight: 220 }} showsVerticalScrollIndicator={false}>
+                <Text style={{ fontSize: 10.5, fontWeight: '700', color: theme.colors.textMuted, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                  Morning & Daytime (00 - 11)
+                </Text>
+                <View style={styles.clockGrid}>
+                  {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((hr) => {
+                    const isSelected = pickerHour === hr;
+                    return (
+                      <Pressable
+                        key={`hr-${hr}`}
+                        onPress={() => {
+                          setPickerHour(hr);
+                          setPickerMode('minute');
+                        }}
+                        style={({ pressed }) => [
+                          styles.clockCell,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                          isSelected && styles.clockCellSelected,
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
+                        ]}
+                      >
+                        <Text style={[styles.clockCellText, { color: theme.colors.textPrimary }, isSelected && styles.clockCellTextSelected]}>
+                          {String(hr).padStart(2, '0')}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                <Text style={{ fontSize: 10.5, fontWeight: '700', color: theme.colors.textMuted, marginTop: 10, marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                  Afternoon & Night (12 - 23)
+                </Text>
+                <View style={styles.clockGrid}>
+                  {[12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23].map((hr) => {
+                    const isSelected = pickerHour === hr;
+                    return (
+                      <Pressable
+                        key={`hr-${hr}`}
+                        onPress={() => {
+                          setPickerHour(hr);
+                          setPickerMode('minute');
+                        }}
+                        style={({ pressed }) => [
+                          styles.clockCell,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                          isSelected && styles.clockCellSelected,
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
+                        ]}
+                      >
+                        <Text style={[styles.clockCellText, { color: theme.colors.textPrimary }, isSelected && styles.clockCellTextSelected]}>
+                          {String(hr).padStart(2, '0')}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </ScrollView>
+            ) : (
+              <View>
+                <View style={styles.clockGrid}>
+                  {[0, 5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55].map((min) => {
+                    const isSelected = pickerMinute === min;
+                    return (
+                      <Pressable
+                        key={`min-${min}`}
+                        onPress={() => setPickerMinute(min)}
+                        style={({ pressed }) => [
+                          styles.clockCell,
+                          { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                          isSelected && styles.clockCellSelected,
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
+                        ]}
+                      >
+                        <Text style={[styles.clockCellText, { color: theme.colors.textPrimary }, isSelected && styles.clockCellTextSelected]}>
+                          {String(min).padStart(2, '0')}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+
+                {/* Fine minute adjustment */}
+                <View style={styles.minuteAdjustRow}>
+                  <Pressable
+                    onPress={() => setPickerMinute((prev) => (prev > 0 ? prev - 1 : 59))}
+                    style={[styles.minuteAdjustBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                  >
+                    <Text style={[styles.minuteAdjustBtnText, { color: theme.colors.textPrimary }]}>-1 Min</Text>
+                  </Pressable>
+                  <Text style={[styles.minuteAdjustLabel, { color: theme.colors.textMuted }]}>
+                    Exact: {String(pickerMinute).padStart(2, '0')}m
+                  </Text>
+                  <Pressable
+                    onPress={() => setPickerMinute((prev) => (prev < 59 ? prev + 1 : 0))}
+                    style={[styles.minuteAdjustBtn, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                  >
+                    <Text style={[styles.minuteAdjustBtnText, { color: theme.colors.textPrimary }]}>+1 Min</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {/* Quick Preset Time Chips */}
+            <View style={styles.clockQuickPresetsRow}>
+              {['08:00', '09:30', '12:00', '14:00', '17:30', '19:00', '20:00', '21:30'].map((preset) => (
+                <Pressable
+                  key={preset}
+                  onPress={() => {
+                    const parsed = parseTimeString(preset);
+                    setPickerHour(parsed.hour);
+                    setPickerMinute(parsed.minute);
+                  }}
+                  style={[styles.clockPresetChip, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}
+                >
+                  <Text style={[styles.clockPresetChipText, { color: theme.colors.textSecondary }]}>{preset}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            {/* Modal Actions */}
+            <View style={styles.clockActionsRow}>
+              <Pressable
+                onPress={() => setTimePickerModalVisible(false)}
+                style={[styles.modalCancelBtn, { backgroundColor: theme.colors.cardAltBg }]}
+              >
+                <Text style={[styles.modalCancelText, { color: theme.colors.textSecondary }]}>Cancel</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleApplyTimePicker}
+                style={[styles.modalSubmitBtn, { backgroundColor: '#4F46E5' }]}
+              >
+                <Text style={styles.modalSubmitText}>Set Time</Text>
+              </Pressable>
+            </View>
           </View>
         </View>
       </Modal>
@@ -2241,6 +2388,27 @@ const styles = StyleSheet.create({
     padding: 5,
     borderRadius: 8,
     borderWidth: 1,
+  },
+  deleteMiniBtn: {
+    padding: 5,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  clearCompletedHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    paddingHorizontal: 9,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.25)',
+  },
+  clearCompletedHeaderText: {
+    color: '#EF4444',
+    fontSize: 11,
+    fontWeight: '700',
   },
 
   /* EMPTY STATE */

@@ -876,6 +876,49 @@ export const fetchUnreadNotificationCount = async (token) => {
 };
 
 /**
+ * Fetch active reminders that need to be shown as a popup
+ * @param {string} token - JWT Token
+ */
+export const fetchActiveReminders = async (token) => {
+  return await apiRequest('/notifications/active-reminders', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+};
+
+/**
+ * Mark a reminder and its related task as completed
+ * @param {string} id - Notification ID or Task ID
+ * @param {string} token - JWT Token
+ */
+export const completeReminder = async (id, token) => {
+  return await apiRequest(`/notifications/${id}/complete`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+};
+
+/**
+ * Snooze a reminder for N minutes
+ * @param {string} id - Notification ID
+ * @param {number} snoozeMinutes - Minutes to snooze
+ * @param {string} token - JWT Token
+ */
+export const snoozeReminder = async (id, snoozeMinutes = 2, token) => {
+  return await apiRequest(`/notifications/${id}/snooze`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ snoozeMinutes }),
+  });
+};
+
+/**
  * Create a notification / reminder
  * @param {Object} notificationData - { title, message, type, relatedEntityId, scheduledTime }
  * @param {string} token - JWT Token
