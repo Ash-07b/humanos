@@ -251,6 +251,83 @@ export const toggleTaskComplete = async (taskId, token) => {
 };
 
 /**
+ * Habit Management API Calls
+ */
+
+/**
+ * Fetch all habits for authenticated user
+ * @param {Object} filters - Optional query filters
+ * @param {string} token - JWT Token
+ */
+export const fetchHabits = async (filters = {}, token) => {
+  return await apiRequest('/habits', {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+};
+
+/**
+ * Create a new habit
+ * @param {Object} habitData - { name, frequency, icon, color, streak, completedToday }
+ * @param {string} token - JWT Token
+ */
+export const createHabit = async (habitData, token) => {
+  return await apiRequest('/habits', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(habitData),
+  });
+};
+
+/**
+ * Update habit by ID
+ * @param {string} habitId - Habit ID
+ * @param {Object} updateData - Updated fields
+ * @param {string} token - JWT Token
+ */
+export const updateHabit = async (habitId, updateData, token) => {
+  return await apiRequest(`/habits/${habitId}`, {
+    method: 'PUT',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(updateData),
+  });
+};
+
+/**
+ * Toggle habit completion state
+ * @param {string} habitId - Habit ID
+ * @param {string} token - JWT Token
+ */
+export const toggleHabitComplete = async (habitId, token) => {
+  return await apiRequest(`/habits/${habitId}/toggle`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+};
+
+/**
+ * Delete habit by ID
+ * @param {string} habitId - Habit ID
+ * @param {string} token - JWT Token
+ */
+export const deleteHabit = async (habitId, token) => {
+  return await apiRequest(`/habits/${habitId}`, {
+    method: 'DELETE',
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+};
+
+/**
  * Goal Management API Calls
  */
 

@@ -29,6 +29,7 @@ app.use((req, res, next) => {
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/tasks', require('./routes/task.routes'));
+app.use('/api/habits', require('./routes/habit.routes'));
 app.use('/api/goals', require('./routes/goal.routes'));
 app.use('/api/health', require('./routes/health.routes'));
 app.use('/api/medications', require('./routes/medication.routes'));

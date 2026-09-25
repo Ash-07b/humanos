@@ -27,6 +27,14 @@ const habitSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    icon: {
+      type: String,
+      default: '⚡',
+    },
+    color: {
+      type: String,
+      default: '#6366F1',
+    },
   },
   {
     timestamps: true,
@@ -34,3 +42,4 @@ const habitSchema = new mongoose.Schema(
 );
 
 module.exports = mongoose.model('Habit', habitSchema);
+

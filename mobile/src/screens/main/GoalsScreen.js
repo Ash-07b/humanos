@@ -49,6 +49,9 @@ import {
   addGoalMilestone,
   toggleGoalMilestone,
   deleteGoal,
+  fetchHabits,
+  createHabit,
+  deleteHabit,
 } from '../../services/api';
 import { getToken } from '../../services/storage';
 
@@ -105,7 +108,9 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
 
   const [goals, setGoals] = useState(user?.goals || []);
   const [completedGoals, setCompletedGoals] = useState(user?.completedGoals || []);
-  const supportingHabits = user?.habits || [];
+  const [supportingHabits, setSupportingHabits] = useState(user?.habits || []);
+  const [showAddGoalHabit, setShowAddGoalHabit] = useState(false);
+  const [newGoalHabitName, setNewGoalHabitName] = useState('');
 
   // Live AI Goal Review State
   const [aiReviewText, setAiReviewText] = useState(
@@ -113,12 +118,15 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
   );
   const [aiReviewLoading, setAiReviewLoading] = useState(false);
 
-  // Fetch goals from backend API
+  // Fetch goals & habits from backend API
   const loadGoalsFromApi = async () => {
     try {
       const token = await getToken();
       if (!token) return;
-      const res = await fetchGoals({}, token);
+      const [res, habitRes] = await Promise.all([
+        fetchGoals({}, token),
+        fetchHabits({}, token),
+      ]);
       if (res && res.success) {
         if (Array.isArray(res.goals)) {
           setGoals(res.goals);
@@ -127,9 +135,42 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
           setCompletedGoals(res.completedGoals);
         }
       }
+      if (habitRes && habitRes.success && Array.isArray(habitRes.habits)) {
+        setSupportingHabits(habitRes.habits);
+      }
     } catch (err) {
-      console.log('Error fetching goals from API:', err);
+      console.log('Error fetching goals/habits from API:', err);
     }
+  };
+
+  const handleAddGoalHabit = async () => {
+    if (!newGoalHabitName.trim()) return;
+    const name = newGoalHabitName.trim();
+    setNewGoalHabitName('');
+    setShowAddGoalHabit(false);
+
+    try {
+      const token = await getToken();
+      if (token) {
+        const res = await createHabit({ name, frequency: 'Daily' }, token);
+        if (res && res.success && res.habit) {
+          setSupportingHabits((prev) => [res.habit, ...prev]);
+          return;
+        }
+      }
+    } catch (e) {
+      console.log('Error adding habit from GoalsScreen:', e);
+    }
+
+    const fallbackHabit = {
+      id: Date.now().toString(),
+      name,
+      frequency: 'Daily',
+      streak: 0,
+      icon: '⚡',
+      color: '#6366F1',
+    };
+    setSupportingHabits((prev) => [fallbackHabit, ...prev]);
   };
 
   // Load goals on mount
@@ -890,25 +931,77 @@ export default function GoalsScreen({ user, onLogout, onNavigateTab, navigation 
                 <Text style={styles.sectionSub}>DAILY MOMENTUM</Text>
                 <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Supporting Habits</Text>
               </View>
+              <Pressable
+                onPress={() => setShowAddGoalHabit(!showAddGoalHabit)}
+                style={({ pressed }) => [
+                  styles.addSmallBtn,
+                  isWeb && styles.webPointer,
+                  pressed && styles.pressedOpacity,
+                ]}
+              >
+                {showAddGoalHabit ? (
+                  <X size={13} color="#6366F1" strokeWidth={2.4} />
+                ) : (
+                  <Plus size={13} color="#6366F1" strokeWidth={2.4} />
+                )}
+                <Text style={styles.addSmallBtnText}>{showAddGoalHabit ? 'Close' : 'Add Habit'}</Text>
+              </Pressable>
             </View>
             <Text style={[styles.habitsExplainer, { color: theme.colors.textSecondary }]}>
-              Small habits help you reach your bigger goals.
+              Small daily routines and habits reinforce your overarching milestones.
             </Text>
 
-            <View style={styles.habitsGrid}>
-              {supportingHabits.map((habit) => (
-                <View key={habit.id} style={[styles.habitCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
-                  <View style={[styles.habitIconWrap, { backgroundColor: `${habit.color}18` }]}>
-                    <Text style={styles.habitIcon}>{habit.icon}</Text>
-                  </View>
-                  <View style={styles.habitContent}>
-                    <Text style={[styles.habitName, { color: theme.colors.textPrimary }]}>{habit.name}</Text>
-                    <Text style={[styles.habitFreq, { color: theme.colors.textSecondary }]}>{habit.frequency}</Text>
-                  </View>
-                  <View style={styles.habitActiveDot} />
-                </View>
-              ))}
-            </View>
+            {/* Quick Add Habit Form */}
+            {showAddGoalHabit && (
+              <View style={[styles.addObjectiveRow, { marginTop: 10, marginBottom: 12 }]}>
+                <TextInput
+                  style={[styles.objectiveInput, { color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
+                  placeholder="Enter a new supporting habit..."
+                  placeholderTextColor="#94A3B8"
+                  value={newGoalHabitName}
+                  onChangeText={setNewGoalHabitName}
+                  onSubmitEditing={handleAddGoalHabit}
+                  returnKeyType="done"
+                  autoFocus
+                />
+                <Pressable
+                  onPress={handleAddGoalHabit}
+                  style={({ pressed }) => [
+                    styles.addObjectiveButton,
+                    isWeb && styles.webPointer,
+                    pressed && styles.buttonPressed,
+                  ]}
+                >
+                  <Text style={styles.addObjectiveButtonText}>Add</Text>
+                </Pressable>
+              </View>
+            )}
+
+            {supportingHabits.length === 0 ? (
+              <View style={[styles.emptyStateWrap, { paddingVertical: 20 }]}>
+                <Text style={[styles.emptyStateDesc, { color: theme.colors.textSecondary }]}>
+                  No supporting habits yet. Add daily habits to accelerate your goal achievements.
+                </Text>
+              </View>
+            ) : (
+              <View style={styles.habitsGrid}>
+                {supportingHabits.map((habit) => {
+                  const habitId = habit._id || habit.id;
+                  return (
+                    <View key={habitId} style={[styles.habitCard, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                      <View style={[styles.habitIconWrap, { backgroundColor: `${habit.color || '#6366F1'}18` }]}>
+                        <Text style={styles.habitIcon}>{habit.icon || '⚡'}</Text>
+                      </View>
+                      <View style={styles.habitContent}>
+                        <Text style={[styles.habitName, { color: theme.colors.textPrimary }]}>{habit.name}</Text>
+                        <Text style={[styles.habitFreq, { color: theme.colors.textSecondary }]}>{habit.frequency || 'Daily'} • {habit.streak || 0}d streak</Text>
+                      </View>
+                      <View style={[styles.habitActiveDot, habit.completedToday && { backgroundColor: '#10B981' }]} />
+                    </View>
+                  );
+                })}
+              </View>
+            )}
           </View>
 
           {/* ==================== 11. GOAL INSIGHTS (AI CARD) ==================== */}

@@ -34,8 +34,9 @@ import {
   Trash2,
 } from 'lucide-react-native';
 import BottomNavigation from '../../components/BottomNavigation';
+import AiChatWidget from '../../components/AiChatWidget';
 import { useTheme } from '../../contexts/ThemeContext';
-import { fetchAiGeneralAssistant, fetchUserProfile, fetchTasks, createTask, deleteTask, toggleTaskComplete } from '../../services/api';
+import { fetchAiGeneralAssistant, fetchUserProfile, fetchTasks, createTask, deleteTask, toggleTaskComplete, fetchHabits, createHabit, deleteHabit, toggleHabitComplete } from '../../services/api';
 import { getToken, saveUser } from '../../services/storage';
 import Logo from '../../components/Logo';
 
@@ -50,6 +51,11 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
   const [selectedMood, setSelectedMood] = useState('High Focus');
   const [newTaskText, setNewTaskText] = useState('');
   const [showAddTask, setShowAddTask] = useState(false);
+
+  // Habit Creation State
+  const [showAddHabit, setShowAddHabit] = useState(false);
+  const [newHabitName, setNewHabitName] = useState('');
+  const [newHabitFreq, setNewHabitFreq] = useState('Daily');
 
   // Live AI Executive Briefing State
   const [aiBriefingText, setAiBriefingText] = useState(
@@ -88,9 +94,10 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
     try {
       const token = await getToken();
       if (!token) return;
-      const [profileRes, taskRes] = await Promise.all([
+      const [profileRes, taskRes, habitRes] = await Promise.all([
         fetchUserProfile(token),
         fetchTasks({}, token),
+        fetchHabits({}, token),
       ]);
       if (profileRes && profileRes.success && profileRes.user) {
         const updated = {
@@ -110,6 +117,12 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
           done: t.status === 'COMPLETED',
         })));
       }
+      if (habitRes && habitRes.success && Array.isArray(habitRes.habits)) {
+        setHabits(habitRes.habits.map(h => ({
+          ...h,
+          id: h._id || h.id,
+        })));
+      }
     } catch (e) {
       console.log('Error fetching live dashboard data:', e);
     }
@@ -126,8 +139,8 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
       if (user.tasks || user.intentions) {
         setTasks((prev) => (prev.length === 0 ? (user.tasks || user.intentions || []) : prev));
       }
-      if (user.habits) {
-        setHabits(user.habits || []);
+      if (user.habits && Array.isArray(user.habits) && user.habits.length > 0) {
+        setHabits((prev) => (prev.length === 0 ? user.habits : prev));
       }
     }
   }, [user]);
@@ -267,18 +280,114 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
     }
   };
 
-  const toggleHabit = (id) => {
-    setHabits((prev) =>
-      prev.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              completedToday: !item.completedToday,
-              streak: !item.completedToday ? item.streak + 1 : Math.max(0, item.streak - 1),
-            }
-          : item
-      )
-    );
+  const toggleHabit = async (id) => {
+    const targetId = id;
+    const nextList = habits.map((item) => {
+      const itemId = item._id || item.id;
+      if (itemId === targetId) {
+        const nextState = !item.completedToday;
+        return {
+          ...item,
+          completedToday: nextState,
+          streak: nextState ? (item.streak || 0) + 1 : Math.max(0, (item.streak || 1) - 1),
+        };
+      }
+      return item;
+    });
+
+    setHabits(nextList);
+    if (onUpdateUser) {
+      onUpdateUser({ habits: nextList });
+    }
+
+    try {
+      const token = await getToken();
+      if (token) {
+        await toggleHabitComplete(targetId, token);
+      }
+    } catch (err) {
+      console.log('Error toggling habit on dashboard:', err);
+    }
+  };
+
+  const handleAddNewHabit = async () => {
+    if (!newHabitName.trim()) return;
+    const name = newHabitName.trim();
+    const frequency = newHabitFreq;
+    setNewHabitName('');
+    setShowAddHabit(false);
+
+    try {
+      const token = await getToken();
+      if (token) {
+        const res = await createHabit({ name, frequency }, token);
+        if (res && res.success && res.habit) {
+          const created = { ...res.habit, id: res.habit._id || res.habit.id };
+          const nextList = [created, ...habits];
+          setHabits(nextList);
+          if (onUpdateUser) {
+            onUpdateUser({ habits: nextList });
+          }
+          return;
+        }
+      }
+    } catch (e) {
+      console.log('Error creating habit from dashboard:', e);
+    }
+
+    const newHabit = {
+      id: Date.now().toString(),
+      name,
+      frequency,
+      streak: 0,
+      completedToday: false,
+    };
+    const nextList = [newHabit, ...habits];
+    setHabits(nextList);
+    if (onUpdateUser) {
+      onUpdateUser({ habits: nextList });
+    }
+  };
+
+  const executeDeleteHabit = async (id) => {
+    const targetId = id;
+    const nextList = habits.filter((item) => (item._id || item.id) !== targetId);
+    setHabits(nextList);
+    if (onUpdateUser) {
+      onUpdateUser({ habits: nextList });
+    }
+    try {
+      const token = await getToken();
+      if (token) {
+        await deleteHabit(targetId, token);
+      }
+    } catch (err) {
+      console.log('Error deleting habit on dashboard:', err);
+    }
+  };
+
+  const confirmDeleteHabit = (habit) => {
+    const habitId = habit._id || habit.id;
+    const habitTitle = habit.name || 'Habit';
+    if (Platform.OS === 'web') {
+      if (window.confirm(`Delete Habit?\n\nAre you sure you want to delete "${habitTitle}"?`)) {
+        executeDeleteHabit(habitId);
+      }
+    } else {
+      Alert.alert(
+        'Delete Habit?',
+        `Are you sure you want to delete "${habitTitle}"?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Delete',
+            style: 'destructive',
+            onPress: () => executeDeleteHabit(habitId),
+          },
+        ],
+        { cancelable: true }
+      );
+    }
   };
 
   const handleAddNewTask = async () => {
@@ -318,10 +427,12 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
   };
 
   // Compute live progress stats safely
-  const completedTasksCount = tasks.filter((i) => i.done).length;
-  const totalTasksCount = tasks.length;
+  const safeTasks = Array.isArray(tasks) ? tasks.filter(Boolean) : [];
+  const safeHabits = Array.isArray(habits) ? habits.filter(Boolean) : [];
+  const completedTasksCount = safeTasks.filter((i) => i.done || i.status === 'COMPLETED').length;
+  const totalTasksCount = safeTasks.length;
   const taskProgressPercent = totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
-  const completedHabitsCount = habits.filter((h) => h.completedToday).length;
+  const completedHabitsCount = safeHabits.filter((h) => h.completedToday).length;
 
   const appContent = (
     <View style={[styles.mainWrapper, { backgroundColor: theme.colors.pageBg }]}>
@@ -617,7 +728,7 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
             )}
 
             {/* List or Empty State */}
-            {tasks.length === 0 ? (
+            {safeTasks.length === 0 ? (
               <View style={[styles.emptyStateBox, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
                 <ListTodo size={36} color="#94A3B8" strokeWidth={1.5} />
                 <Text style={[styles.emptyStateTitle, { color: theme.colors.textPrimary }]}>Task queue is currently clear</Text>
@@ -637,8 +748,9 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
               </View>
             ) : (
               <View style={styles.taskList}>
-                {tasks.map((item) => {
-                  const itemId = item._id || item.id;
+                {safeTasks.map((item) => {
+                  if (!item) return null;
+                  const itemId = item._id || item.id || String(Math.random());
                   return (
                     <View
                       key={itemId}
@@ -670,7 +782,7 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
                         ]}
                       >
                         <Text style={[styles.taskTitle, { color: theme.colors.textPrimary }, item.done && styles.taskTitleDone]}>
-                          {item.title}
+                          {item.title || item.text || 'Task'}
                         </Text>
                         <View style={styles.taskMetaRow}>
                           <Text style={styles.taskCategoryBadge}>{item.category || 'Task'}</Text>
@@ -700,61 +812,172 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
           {/* Daily Habit Loops Tracker */}
           <View style={[styles.sectionCard, { backgroundColor: theme.colors.cardBg, borderColor: theme.colors.border }]}>
             <View style={styles.sectionHeaderRow}>
-              <View>
+              <View style={styles.sectionTitleCol}>
                 <Text style={styles.sectionSub}>SYSTEM CONSISTENCY</Text>
                 <Text style={[styles.sectionTitle, { color: theme.colors.textPrimary }]}>Core Habits & Routines</Text>
               </View>
-              <View style={styles.habitScoreBadge}>
-                <Text style={styles.habitScoreText}>
-                  {completedHabitsCount}/{habits.length} Complete
-                </Text>
+              <View style={styles.sectionActionCol}>
+                {safeHabits.length > 0 && (
+                  <View style={[styles.habitScoreBadge, { backgroundColor: isDarkMode ? 'rgba(99, 102, 241, 0.15)' : '#EEF2FF' }]}>
+                    <Text style={[styles.habitScoreText, { color: isDarkMode ? '#A5B4FC' : '#4338CA' }]}>
+                      {completedHabitsCount}/{safeHabits.length} Complete
+                    </Text>
+                  </View>
+                )}
+                <Pressable
+                  onPress={() => setShowAddHabit(!showAddHabit)}
+                  style={({ pressed }) => [
+                    styles.addButton,
+                    isWeb && styles.webPointer,
+                    pressed && styles.pressedOpacity,
+                  ]}
+                >
+                  {showAddHabit ? (
+                    <X size={13} color="#6366F1" strokeWidth={2.4} />
+                  ) : (
+                    <Plus size={13} color="#6366F1" strokeWidth={2.4} />
+                  )}
+                  <Text style={styles.addButtonText}>{showAddHabit ? 'Close' : 'Add'}</Text>
+                </Pressable>
               </View>
             </View>
 
-            {habits.length === 0 ? (
+            {/* Inline Quick Add Habit */}
+            {showAddHabit && (
+              <View style={[styles.addTaskBox, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
+                <TextInput
+                  style={[styles.taskInput, { color: theme.colors.textPrimary }, isWeb && styles.webOutlineNone]}
+                  placeholder="What routine or habit do you want to build?"
+                  placeholderTextColor="#94A3B8"
+                  value={newHabitName}
+                  onChangeText={setNewHabitName}
+                  onSubmitEditing={handleAddNewHabit}
+                  returnKeyType="done"
+                  autoFocus
+                />
+                <View style={styles.habitFormMetaRow}>
+                  <View style={styles.freqPillsRow}>
+                    {['Daily', 'Weekly'].map((freq) => (
+                      <Pressable
+                        key={freq}
+                        onPress={() => setNewHabitFreq(freq)}
+                        style={[
+                          styles.freqPill,
+                          newHabitFreq === freq && styles.freqPillActive,
+                          isWeb && styles.webPointer,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.freqPillText,
+                            newHabitFreq === freq && styles.freqPillTextActive,
+                          ]}
+                        >
+                          {freq}
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                  <Pressable
+                    onPress={handleAddNewHabit}
+                    style={({ pressed }) => [
+                      styles.saveTaskButton,
+                      isWeb && styles.webPointer,
+                      pressed && styles.buttonPressed,
+                    ]}
+                  >
+                    <Text style={styles.saveTaskButtonText}>Add Habit</Text>
+                  </Pressable>
+                </View>
+              </View>
+            )}
+
+            {safeHabits.length === 0 ? (
               <View style={[styles.emptyStateBox, { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border }]}>
                 <Repeat size={36} color="#94A3B8" strokeWidth={1.5} />
                 <Text style={[styles.emptyStateTitle, { color: theme.colors.textPrimary }]}>No habits tracked yet</Text>
                 <Text style={[styles.emptyStateDesc, { color: theme.colors.textSecondary }]}>
-                  Habits logged in your Goals & Habits tab will automatically appear here.
+                  Set up daily core routines to build consistent momentum and track your streaks.
                 </Text>
+                <Pressable
+                  onPress={() => setShowAddHabit(true)}
+                  style={({ pressed }) => [
+                    styles.emptyStateButton,
+                    isWeb && styles.webPointer,
+                    pressed && styles.pressedOpacity,
+                  ]}
+                >
+                  <Text style={styles.emptyStateButtonText}>+ Add First Habit</Text>
+                </Pressable>
               </View>
             ) : (
               <View style={styles.habitsGrid}>
-                {habits.map((habit) => (
-                  <Pressable
-                    key={habit.id}
-                    onPress={() => toggleHabit(habit.id)}
-                    style={({ pressed }) => [
-                      styles.habitCard,
-                      { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
-                      habit.completedToday && styles.habitCardCompleted,
-                      isWeb && styles.webPointer,
-                      pressed && styles.pressedOpacity,
-                    ]}
-                  >
-                    <View style={styles.habitCardTop}>
-                      <Zap size={18} color="#6366F1" strokeWidth={2} />
-                      <View
-                        style={[
-                          styles.habitCheckCircle,
-                          habit.completedToday && styles.habitCheckCircleActive,
+                {safeHabits.map((habit) => {
+                  if (!habit) return null;
+                  const habitId = habit._id || habit.id || String(Math.random());
+                  return (
+                    <View
+                      key={habitId}
+                      style={[
+                        styles.habitCard,
+                        { backgroundColor: theme.colors.cardAltBg, borderColor: theme.colors.border },
+                        habit.completedToday && styles.habitCardCompleted,
+                      ]}
+                    >
+                      <View style={styles.habitCardTop}>
+                        <Pressable
+                          onPress={() => toggleHabit(habitId)}
+                          style={({ pressed }) => [
+                            styles.habitCheckCircle,
+                            habit.completedToday && styles.habitCheckCircleActive,
+                            isWeb && styles.webPointer,
+                            pressed && styles.pressedOpacity,
+                          ]}
+                          hitSlop={8}
+                        >
+                          {habit.completedToday ? (
+                            <Check size={11} color="#FFFFFF" strokeWidth={3} />
+                          ) : (
+                            <Plus size={11} color="#64748B" strokeWidth={3} />
+                          )}
+                        </Pressable>
+
+                        <Pressable
+                          onPress={() => confirmDeleteHabit(habit)}
+                          hitSlop={8}
+                          style={({ pressed }) => [
+                            styles.taskDeleteBtn,
+                            isWeb && styles.webPointer,
+                            pressed && styles.pressedOpacity,
+                          ]}
+                        >
+                          <Trash2 size={13} color="#EF4444" strokeWidth={2.2} />
+                        </Pressable>
+                      </View>
+
+                      <Pressable
+                        onPress={() => toggleHabit(habitId)}
+                        style={({ pressed }) => [
+                          isWeb && styles.webPointer,
+                          pressed && styles.pressedOpacity,
                         ]}
                       >
-                        {habit.completedToday ? (
-                          <Check size={11} color="#FFFFFF" strokeWidth={3} />
-                        ) : (
-                          <Plus size={11} color="#64748B" strokeWidth={3} />
-                        )}
-                      </View>
+                        <Text style={[styles.habitName, { color: theme.colors.textPrimary }]}>{habit.name}</Text>
+                        <View style={styles.habitStreakRow}>
+                          <Flame size={12} color="#D97706" strokeWidth={2.4} />
+                          <Text style={[styles.habitStreak, { color: theme.colors.textSecondary }]}>
+                            {habit.streak || 0}d streak
+                          </Text>
+                          {habit.frequency && (
+                            <Text style={[styles.habitFreqTag, { color: theme.colors.textMuted }]}>
+                              • {habit.frequency}
+                            </Text>
+                          )}
+                        </View>
+                      </Pressable>
                     </View>
-                    <Text style={[styles.habitName, { color: theme.colors.textPrimary }]}>{habit.name}</Text>
-                    <View style={styles.habitStreakRow}>
-                      <Flame size={12} color="#D97706" strokeWidth={2.4} />
-                      <Text style={[styles.habitStreak, { color: theme.colors.textSecondary }]}>{habit.streak || 0}d streak</Text>
-                    </View>
-                  </Pressable>
-                ))}
+                  );
+                })}
               </View>
             )}
           </View>
@@ -840,6 +1063,9 @@ export default function DashboardScreen({ user, onLogout, onNavigateTab, onUpdat
           <View style={{ height: 16 }} />
         </View>
       </ScrollView>
+
+      {/* Floating AI Copilot Chatbox */}
+      <AiChatWidget user={user} currentMood={selectedMood} />
 
       {/* Bottom Floating Navigation */}
       <BottomNavigation activeTab={activeTab} onTabPress={handleTabChange} />
@@ -1242,7 +1468,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    gap: 8,
     marginBottom: 14,
+  },
+  sectionTitleCol: {
+    flex: 1,
+    minWidth: 140,
+  },
+  sectionActionCol: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
   },
   sectionSub: {
     color: '#6366F1',
@@ -1252,7 +1489,7 @@ const styles = StyleSheet.create({
   },
   sectionTitle: {
     color: '#0F172A',
-    fontSize: 16,
+    fontSize: 15.5,
     fontWeight: '800',
     marginTop: 2,
   },
@@ -1484,10 +1721,13 @@ const styles = StyleSheet.create({
   },
   habitsGrid: {
     flexDirection: 'row',
-    gap: 8,
+    flexWrap: 'wrap',
+    gap: 10,
   },
   habitCard: {
-    flex: 1,
+    flexBasis: '47%',
+    flexGrow: 1,
+    minWidth: 135,
     backgroundColor: '#F8FAFC',
     borderRadius: 16,
     padding: 12,
@@ -1504,13 +1744,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 8,
   },
-  habitIcon: {
-    fontSize: 20,
-  },
   habitCheckCircle: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: '#E2E8F0',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1518,26 +1755,52 @@ const styles = StyleSheet.create({
   habitCheckCircleActive: {
     backgroundColor: '#4F46E5',
   },
-  habitCheckMark: {
-    color: '#FFFFFF',
-    fontSize: 11,
-    fontWeight: '900',
-  },
-  habitPlus: {
-    color: '#64748B',
-    fontSize: 13,
-    fontWeight: '700',
-  },
   habitName: {
     color: '#0F172A',
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
     marginBottom: 4,
   },
+  habitStreakRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
   habitStreak: {
     color: '#D97706',
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
+  },
+  habitFreqTag: {
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  habitFormMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  freqPillsRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  freqPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(99, 102, 241, 0.08)',
+  },
+  freqPillActive: {
+    backgroundColor: '#6366F1',
+  },
+  freqPillText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#6366F1',
+  },
+  freqPillTextActive: {
+    color: '#FFFFFF',
   },
   moduleRow: {
     flexDirection: 'row',
